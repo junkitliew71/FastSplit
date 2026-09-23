@@ -4,14 +4,12 @@ import {
   authenticatedIdentity,
   clearGuestMode,
   enableGuestMode,
-  restoreGuestMode,
   type AuthIdentity,
 } from './auth-session.ts';
 import {
   firebaseConfigured,
   friendlyAuthError,
   logoutFirebase,
-  observeFirebaseUser,
   signInWithGoogle,
 } from './firebase-auth.ts';
 import { prepareReceiptImage, type PreparedImage } from './image.ts';
@@ -34,7 +32,7 @@ const app = document.querySelector<HTMLDivElement>('#app');
 if (!app) throw new Error('App root is missing.');
 
 app.innerHTML = `
-  <section id="auth-gate" class="auth-gate" aria-labelledby="auth-title">
+  <section id="auth-gate" class="auth-gate hidden" aria-labelledby="auth-title">
     <div class="auth-card">
       <a class="brand auth-brand" href="/" aria-label="FastSplit home"><span>F</span> FastSplit</a>
       <p class="eyebrow">WELCOME TO FASTSPLIT</p>
@@ -49,20 +47,27 @@ app.innerHTML = `
   <header class="topbar">
     <a class="brand" href="/" aria-label="FastSplit home"><span>F</span> FastSplit</a>
     <div class="topbar-actions">
-      <button id="history-nav" class="history-nav hidden" type="button">History</button>
       <div class="lang" aria-label="Language"><button class="active">EN</button><button>中文</button></div>
+      <button id="split-nav" class="header-link" type="button">Split a bill</button>
+      <button id="history-nav" class="history-nav hidden" type="button">↶&nbsp; History</button>
       <div id="account-chip" class="account-chip hidden"><span id="account-avatar"></span><span id="account-name"></span><button id="logout-button" type="button">Log out</button></div>
     </div>
   </header>
-  <main id="app-main" class="auth-hidden">
+  <main id="app-main">
     <div id="scan-view">
     <section class="hero">
-      <p class="eyebrow">SMART RECEIPT SCANNER</p>
-      <h1>Split the bill.<br><em>Keep the moment.</em></h1>
-      <p class="intro">Upload a restaurant receipt and FastSplit will read every line securely on the server.</p>
+      <h1>Split the bill.<br><em>Pay for what you ate.</em></h1>
+      <p class="intro">Add your receipt, choose who had what, and share the totals.</p>
+      <div class="hero-actions">
+        <button id="scan-hero" class="hero-primary" type="button">▣&nbsp; Scan receipt</button>
+        <button id="upload-hero" class="hero-secondary" type="button">⇧&nbsp; Upload receipt</button>
+      </div>
+      <button id="manual-hero" class="manual-link" type="button">⌕&nbsp; Enter manually&nbsp; →</button>
     </section>
     <section class="scanner" aria-labelledby="scan-title">
-      <div class="section-heading"><div><p class="step">01 · RECEIPT</p><h2 id="scan-title">Scan your receipt</h2></div><span class="privacy">Processed privately</span></div>
+      <button id="scanner-back" class="history-back" type="button">‹&nbsp; Back</button>
+      <p class="step">BRING THE BILL</p>
+      <div class="section-heading"><div><h2 id="scan-title">Scan your receipt</h2><p class="scanner-copy">Keep the whole receipt in frame, with readable prices.</p></div><span class="privacy">Processed privately</span></div>
       <label class="dropzone" id="dropzone">
         <input id="receipt-input" type="file" accept="image/*" capture="environment" />
         <span class="camera">⌁</span><strong>Take a photo or choose a receipt</strong>
@@ -101,7 +106,7 @@ app.innerHTML = `
       <div id="history-list" class="history-list"></div>
     </section>
   </main>
-  <footer id="app-footer" class="auth-hidden">FastSplit · Built for fairer tables</footer>
+  <footer id="app-footer"><strong>FastSplit·</strong><span>Made for meals, not maths.</span></footer>
 `;
 
 const authGate = document.querySelector<HTMLElement>('#auth-gate')!;
@@ -117,6 +122,12 @@ const appFooter = document.querySelector<HTMLElement>('#app-footer')!;
 const scanView = document.querySelector<HTMLElement>('#scan-view')!;
 const historyView = document.querySelector<HTMLElement>('#history-view')!;
 const historyNav = document.querySelector<HTMLButtonElement>('#history-nav')!;
+const splitNav = document.querySelector<HTMLButtonElement>('#split-nav')!;
+const scanHero = document.querySelector<HTMLButtonElement>('#scan-hero')!;
+const uploadHero = document.querySelector<HTMLButtonElement>('#upload-hero')!;
+const manualHero = document.querySelector<HTMLButtonElement>('#manual-hero')!;
+const scannerBack = document.querySelector<HTMLButtonElement>('#scanner-back')!;
+const scannerSection = document.querySelector<HTMLElement>('.scanner')!;
 const historyBack = document.querySelector<HTMLButtonElement>('#history-back')!;
 const historyStatus = document.querySelector<HTMLDivElement>('#history-status')!;
 const historyList = document.querySelector<HTMLDivElement>('#history-list')!;
@@ -255,9 +266,13 @@ function renderReview(): void {
 }
 
 async function showHistory(): Promise<void> {
-  if (currentIdentity?.mode !== 'authenticated') return;
   scanView.classList.add('hidden');
   historyView.classList.remove('hidden');
+  if (currentIdentity?.mode !== 'authenticated') {
+    historyList.replaceChildren();
+    historyStatus.textContent = 'No saved receipts yet.';
+    return;
+  }
   historyStatus.textContent = 'Loading your receipts…';
   historyList.replaceChildren();
   try {
@@ -420,6 +435,11 @@ saveHistoryButton.addEventListener('click', async () => {
 });
 
 historyNav.addEventListener('click', () => void showHistory());
+splitNav.addEventListener('click', () => scannerSection.scrollIntoView({ behavior: 'smooth' }));
+scanHero.addEventListener('click', () => input.click());
+uploadHero.addEventListener('click', () => input.click());
+manualHero.addEventListener('click', () => scannerSection.scrollIntoView({ behavior: 'smooth' }));
+scannerBack.addEventListener('click', () => window.scrollTo({ top: 0, behavior: 'smooth' }));
 historyBack.addEventListener('click', () => {
   historyView.classList.add('hidden');
   scanView.classList.remove('hidden');
@@ -483,12 +503,12 @@ function enterApplication(identity: AuthIdentity): void {
   authGate.classList.add('hidden');
   appMain.classList.remove('auth-hidden');
   appFooter.classList.remove('auth-hidden');
-  accountChip.classList.remove('hidden');
+  accountChip.classList.toggle('hidden', identity.mode === 'guest');
   const name = identity.displayName || identity.email || (identity.mode === 'guest' ? 'Guest' : 'Account');
   accountName.textContent = identity.mode === 'guest' ? 'Guest Mode' : name;
   accountAvatar.textContent = name.trim().charAt(0).toUpperCase() || 'F';
   accountChip.dataset.mode = identity.mode;
-  historyNav.classList.toggle('hidden', identity.mode !== 'authenticated');
+  historyNav.classList.remove('hidden');
   saveHistoryButton.classList.toggle('hidden', identity.mode !== 'authenticated' || !reviewModel);
 }
 
@@ -537,13 +557,5 @@ logoutButton.addEventListener('click', async () => {
   }
 });
 
-observeFirebaseUser((user) => {
-  if (user) {
-    clearGuestMode(localStorage);
-    enterApplication(authenticatedIdentity(user));
-    return;
-  }
-  const guest = restoreGuestMode(localStorage);
-  if (guest) enterApplication(guest);
-  else showAuthentication();
-});
+// FastSplit now opens directly without an authentication gate.
+enterApplication(enableGuestMode(localStorage));
