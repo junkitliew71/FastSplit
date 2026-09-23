@@ -25,4 +25,4 @@ The Tesseract worker is loaded once during server startup and reused. A lightwei
 - `pnpm lint` — ESLint
 - `pnpm test` — unit tests
 
-Copy `.env.example` to `.env` only when you need to override the safe defaults. No Firebase configuration is part of Phase 2.
+Copy `.env.example` to `.env` and provide the Firebase Web App values to enable Google sign-in. These client configuration values are read through `VITE_FIREBASE_*`; Firebase Admin credentials are not used or exposed. Guest Mode remains available when Firebase is not configured.

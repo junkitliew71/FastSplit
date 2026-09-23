@@ -2,12 +2,31 @@
 * { box-sizing: border-box; }
 body { margin: 0; min-width: 320px; }
 button, input { font: inherit; }
+.auth-hidden { display: none !important; }
+.auth-gate { min-height: 100vh; display: grid; place-items: center; padding: 32px 20px; background: radial-gradient(circle at 50% 15%, #fffdf8 0, #f4f0e7 62%); }
+.auth-card { width: min(560px,100%); padding: clamp(28px,6vw,54px); border: 1px solid #ddd5c8; border-radius: 24px; background: rgba(255,253,248,.94); box-shadow: 0 24px 80px rgba(11,59,54,.12); text-align: center; }
+.auth-brand { display: inline-block; margin-bottom: 36px; }
+.auth-card h1 { margin: 10px auto 20px; font-size: clamp(42px,8vw,66px); }
+.auth-card .intro { margin: 0 auto 30px; font-size: 16px; }
+.auth-button { width: 100%; min-height: 54px; margin-top: 10px; border-radius: 11px; cursor: pointer; font-weight: 750; }
+.auth-button:disabled { opacity: .48; cursor: not-allowed; }
+.google-button { border: 1px solid #d4cec3; color: #183e39; background: white; }
+.guest-button { border: 0; color: white; background: #0b6f5c; }
+.google-mark { display: inline-grid; place-items: center; width: 25px; height: 25px; margin-right: 8px; border-radius: 50%; color: #2867d7; background: #f4f6fa; font-weight: 900; }
+.auth-message { min-height: 22px; margin: 14px 0 0; color: #b54738; font-size: 13px; }
+.auth-note { display: block; margin-top: 16px; color: #71817f; line-height: 1.45; }
 .topbar { height: 72px; display: flex; align-items: center; justify-content: space-between; padding: 0 clamp(20px,5vw,72px); border-bottom: 1px solid #d8d0c1; }
 .brand { color: #0b3b36; text-decoration: none; font-size: 22px; font-weight: 800; letter-spacing: -.04em; }
 .brand span { display: inline-grid; place-items: center; width: 32px; height: 32px; margin-right: 7px; border-radius: 50%; color: #f4f0e7; background: #e35b35; }
 .lang { display: flex; gap: 4px; padding: 4px; border: 1px solid #d8d0c1; border-radius: 99px; }
 .lang button { border: 0; border-radius: 99px; padding: 6px 10px; color: #56706d; background: transparent; font-size: 12px; }
 .lang .active { color: white; background: #0b3b36; }
+.topbar-actions { display: flex; align-items: center; gap: 10px; }
+.account-chip { display: flex; align-items: center; gap: 7px; padding: 4px 5px 4px 4px; border: 1px solid #d8d0c1; border-radius: 99px; background: #fffdf8; }
+.account-chip > span:first-child { display: grid; place-items: center; width: 29px; height: 29px; border-radius: 50%; color: #0b3b36; background: #e7eee2; font-size: 12px; font-weight: 800; }
+.account-chip #account-name { max-width: 130px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 12px; font-weight: 700; }
+.account-chip button { min-height: 30px; border: 0; border-radius: 99px; color: #526b67; background: transparent; cursor: pointer; font-size: 11px; }
+.account-chip button:hover { background: #edf0eb; }
 main { width: min(1120px, calc(100% - 40px)); margin: auto; }
 .hero { padding: clamp(56px,9vw,112px) 0 50px; border-bottom: 1px solid #d8d0c1; }
 .eyebrow,.step { color: #e35b35; font-size: 12px; font-weight: 800; letter-spacing: .17em; }
@@ -83,4 +102,7 @@ footer { padding: 26px; border-top: 1px solid #d8d0c1; color: #71817f; text-alig
   .preview-wrap { position: sticky; top: 8px; z-index: 4; max-height: 48vh; overflow: auto; }
   .ocr-box { min-width: 34px; min-height: 34px; }
   .mapping-field { min-height: 76px; }
+  .topbar { height: auto; min-height: 72px; gap: 10px; padding-top: 10px; padding-bottom: 10px; }
+  .topbar-actions { align-items: end; flex-direction: column-reverse; gap: 5px; }
+  .account-chip #account-name { max-width: 78px; }
 }

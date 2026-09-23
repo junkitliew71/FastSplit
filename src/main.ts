@@ -1,5 +1,19 @@
 import './style.css';
 import { scanReceipt } from './api.ts';
+import {
+  authenticatedIdentity,
+  clearGuestMode,
+  enableGuestMode,
+  restoreGuestMode,
+  type AuthIdentity,
+} from './auth-session.ts';
+import {
+  firebaseConfigured,
+  friendlyAuthError,
+  logoutFirebase,
+  observeFirebaseUser,
+  signInWithGoogle,
+} from './firebase-auth.ts';
 import { prepareReceiptImage, type PreparedImage } from './image.ts';
 import {
   assignDetection,
@@ -18,11 +32,26 @@ const app = document.querySelector<HTMLDivElement>('#app');
 if (!app) throw new Error('App root is missing.');
 
 app.innerHTML = `
+  <section id="auth-gate" class="auth-gate" aria-labelledby="auth-title">
+    <div class="auth-card">
+      <a class="brand auth-brand" href="/" aria-label="FastSplit home"><span>F</span> FastSplit</a>
+      <p class="eyebrow">WELCOME TO FASTSPLIT</p>
+      <h1 id="auth-title">Split together.<br><em>Settle simply.</em></h1>
+      <p class="intro">Sign in to keep your account ready across devices, or continue as a guest to split a bill now.</p>
+      <button id="google-login" class="auth-button google-button" type="button"><span class="google-mark">G</span> Continue with Google</button>
+      <button id="guest-login" class="auth-button guest-button" type="button">Continue as Guest</button>
+      <p id="auth-message" class="auth-message" aria-live="polite"></p>
+      <small class="auth-note">Guest Mode keeps the core receipt and bill-splitting flow available without an account.</small>
+    </div>
+  </section>
   <header class="topbar">
     <a class="brand" href="/" aria-label="FastSplit home"><span>F</span> FastSplit</a>
-    <div class="lang" aria-label="Language"><button class="active">EN</button><button>中文</button></div>
+    <div class="topbar-actions">
+      <div class="lang" aria-label="Language"><button class="active">EN</button><button>中文</button></div>
+      <div id="account-chip" class="account-chip hidden"><span id="account-avatar"></span><span id="account-name"></span><button id="logout-button" type="button">Log out</button></div>
+    </div>
   </header>
-  <main>
+  <main id="app-main" class="auth-hidden">
     <section class="hero">
       <p class="eyebrow">SMART RECEIPT SCANNER</p>
       <h1>Split the bill.<br><em>Keep the moment.</em></h1>
@@ -57,8 +86,19 @@ app.innerHTML = `
       </div>
     </section>
   </main>
-  <footer>FastSplit · Built for fairer tables</footer>
+  <footer id="app-footer" class="auth-hidden">FastSplit · Built for fairer tables</footer>
 `;
+
+const authGate = document.querySelector<HTMLElement>('#auth-gate')!;
+const authMessage = document.querySelector<HTMLParagraphElement>('#auth-message')!;
+const googleLoginButton = document.querySelector<HTMLButtonElement>('#google-login')!;
+const guestLoginButton = document.querySelector<HTMLButtonElement>('#guest-login')!;
+const logoutButton = document.querySelector<HTMLButtonElement>('#logout-button')!;
+const accountChip = document.querySelector<HTMLDivElement>('#account-chip')!;
+const accountAvatar = document.querySelector<HTMLSpanElement>('#account-avatar')!;
+const accountName = document.querySelector<HTMLSpanElement>('#account-name')!;
+const appMain = document.querySelector<HTMLElement>('#app-main')!;
+const appFooter = document.querySelector<HTMLElement>('#app-footer')!;
 
 const input = document.querySelector<HTMLInputElement>('#receipt-input')!;
 const dropzone = document.querySelector<HTMLLabelElement>('#dropzone')!;
@@ -84,6 +124,7 @@ let currentResult: ReceiptOcrResponse | null = null;
 let reviewModel: ReviewModel | null = null;
 let activeTarget: TargetKey | null = null;
 let mappingHistory: ReviewModel[] = [];
+let currentIdentity: AuthIdentity | null = null;
 
 function reset(): void {
   controller?.abort();
@@ -313,4 +354,71 @@ undoButton.addEventListener('click', () => {
   if (!previous) return;
   reviewModel = previous;
   renderReview();
+});
+
+function enterApplication(identity: AuthIdentity): void {
+  currentIdentity = identity;
+  authGate.classList.add('hidden');
+  appMain.classList.remove('auth-hidden');
+  appFooter.classList.remove('auth-hidden');
+  accountChip.classList.remove('hidden');
+  const name = identity.displayName || identity.email || (identity.mode === 'guest' ? 'Guest' : 'Account');
+  accountName.textContent = identity.mode === 'guest' ? 'Guest Mode' : name;
+  accountAvatar.textContent = name.trim().charAt(0).toUpperCase() || 'F';
+  accountChip.dataset.mode = identity.mode;
+}
+
+function showAuthentication(): void {
+  currentIdentity = null;
+  authGate.classList.remove('hidden');
+  appMain.classList.add('auth-hidden');
+  appFooter.classList.add('auth-hidden');
+  accountChip.classList.add('hidden');
+  authMessage.textContent = firebaseConfigured
+    ? ''
+    : 'Google sign-in needs the Firebase web configuration. Guest Mode is ready.';
+  googleLoginButton.disabled = !firebaseConfigured;
+}
+
+googleLoginButton.addEventListener('click', async () => {
+  authMessage.textContent = 'Opening Google sign-in…';
+  googleLoginButton.disabled = true;
+  try {
+    clearGuestMode(localStorage);
+    const user = await signInWithGoogle();
+    enterApplication(authenticatedIdentity(user));
+    authMessage.textContent = '';
+  } catch (error) {
+    authMessage.textContent = friendlyAuthError(error);
+  } finally {
+    googleLoginButton.disabled = !firebaseConfigured;
+  }
+});
+
+guestLoginButton.addEventListener('click', () => {
+  authMessage.textContent = '';
+  enterApplication(enableGuestMode(localStorage));
+});
+
+logoutButton.addEventListener('click', async () => {
+  logoutButton.disabled = true;
+  try {
+    clearGuestMode(localStorage);
+    if (currentIdentity?.mode === 'authenticated') await logoutFirebase();
+    reset();
+    showAuthentication();
+  } finally {
+    logoutButton.disabled = false;
+  }
+});
+
+observeFirebaseUser((user) => {
+  if (user) {
+    clearGuestMode(localStorage);
+    enterApplication(authenticatedIdentity(user));
+    return;
+  }
+  const guest = restoreGuestMode(localStorage);
+  if (guest) enterApplication(guest);
+  else showAuthentication();
 });
