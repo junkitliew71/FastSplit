@@ -10,12 +10,12 @@ import type {
 } from './types.js';
 
 const SUMMARY_PATTERNS = {
-  subtotal: /\bsub\s*total\b/i,
-  service: /\b(?:service\s*(?:charge|fee)|svc\s*(?:chg|charge))\b/i,
-  tax: /\b(?:sst|gst|service\s*tax|tax)\b/i,
+  subtotal: /\b(?:sub\s*total|total\s*(?:sales\s*)?\(?excluding\s*(?:sst|gst)?)\b/i,
+  service: /\b(?:(?:service|serv|sarv|svc)[.:\s-]*(?:chg|cha|charge|fee)|cha\s*10%)/i,
+  tax: /\b(?:sst|gst(?:\s*payable)?|service\s*tax|tax)\b/i,
   discount: /\b(?:discount|voucher|rebate|promo)\b/i,
   rounding: /\b(?:rounding|round\s*(?:adj|adjustment)?)\b/i,
-  grandTotal: /\b(?:grand\s*total|amount\s*due|total\s*due|net\s*total)\b|^\s*total\b/i,
+  grandTotal: /\b(?:grand\s*total|amount\s*due|total\s*due|net\s*total|total\s*\(?inclusive\s*(?:of\s*)?(?:sst|gst))\b|^\s*total\b/i,
 };
 
 const NON_ITEM_PATTERN = /\b(?:receipt|invoice|cashier|table|date|time|tel|phone|address|cash|change|payment|thank|welcome|tax invoice)\b/i;
@@ -33,7 +33,7 @@ export function parseReceipt(detections: OcrDetection[]): ParsedReceipt {
   const summaryStart = layout.rows.findIndex(isSummaryRow);
   const itemBoundary = summaryStart >= 0 ? summaryStart : layout.rows.length;
   const rowsBeforeSummary = layout.rows.slice(0, itemBoundary);
-  const headerIndex = rowsBeforeSummary.findIndex((row) => HEADER_PATTERN.test(row.text));
+  const headerIndex = rowsBeforeSummary.findIndex(isHeaderRow);
   const itemRows = associateWrappedItemRows(headerIndex >= 0 ? rowsBeforeSummary.slice(headerIndex + 1) : rowsBeforeSummary);
   const items = itemRows.map((row, index) => parseItemRow(row, layout.columns, index + 1))
     .filter((item): item is ParsedItem => item !== null);
@@ -101,16 +101,24 @@ function associateWrappedItemRows(rows: LayoutRow[]): LayoutRow[] {
     const canWrap = !rowHasAmount
       && nextHasAmount
       && !isNonItemRow(row)
-      && !HEADER_PATTERN.test(row.text)
+      && !isHeaderRow(row)
       && next !== undefined
       && next.centerY - row.centerY < 0.065;
-    if (!canWrap || !next) {
+    const canAppendFollowingName = rowHasAmount
+      && !nextHasAmount
+      && next !== undefined
+      && !isNonItemRow(next)
+      && !isHeaderRow(next)
+      && /[A-Za-z\u3400-\u9fff]{2}/.test(next.text)
+      && next.bbox.x1 < 0.58
+      && next.centerY - row.centerY < 0.055;
+    if ((!canWrap && !canAppendFollowingName) || !next) {
       associated.push(row);
       continue;
     }
     const detections = [
-      ...[...row.detections].sort((left, right) => left.centerX - right.centerX),
-      ...[...next.detections].sort((left, right) => left.centerX - right.centerX),
+      ...[...(canWrap ? row : next).detections].sort((left, right) => left.centerX - right.centerX),
+      ...[...(canWrap ? next : row).detections].sort((left, right) => left.centerX - right.centerX),
     ];
     associated.push({
       id: `${row.id}_${next.id}`,
@@ -130,18 +138,19 @@ function associateWrappedItemRows(rows: LayoutRow[]): LayoutRow[] {
 }
 
 function parseItemRow(row: LayoutRow, columns: ReceiptColumn[], number: number): ParsedItem | null {
-  if (isNonItemRow(row) || HEADER_PATTERN.test(row.text)) return null;
+  if (isNonItemRow(row) || isHeaderRow(row)) return null;
   const numeric = row.detections.map(toNumericToken).filter((token): token is NumericToken => token !== null);
   if (numeric.length === 0) return null;
 
   const rightmostTotal = chooseByColumn(numeric, columns, 'total') ?? numeric[numeric.length - 1] ?? null;
   if (!rightmostTotal) return null;
   const remaining = numeric.filter((token) => token !== rightmostTotal);
-  const explicitQuantity = findExplicitQuantity(row, remaining, columns);
+  const arithmetic = findArithmeticPair(remaining, rightmostTotal.cents);
+  const explicitQuantity = arithmetic?.quantity ?? findExplicitQuantity(row, remaining, columns);
   const remainingAfterQuantity = explicitQuantity
     ? remaining.filter((token) => token !== explicitQuantity)
     : remaining;
-  const unitPrice = chooseByColumn(remainingAfterQuantity, columns, 'unitPrice')
+  const unitPrice = arithmetic?.unitPrice ?? chooseByColumn(remainingAfterQuantity, columns, 'unitPrice')
     ?? remainingAfterQuantity[remainingAfterQuantity.length - 1]
     ?? null;
   const quantity = explicitQuantity?.quantity ?? inferQuantity(remaining, unitPrice);
@@ -151,7 +160,7 @@ function parseItemRow(row: LayoutRow, columns: ReceiptColumn[], number: number):
   const nameDetections = row.detections.filter((detection) => {
     if (numeric.some((token) => token.detection.id === detection.id)) return false;
     return !/^[x×]$/i.test(detection.text.trim());
-  });
+  }).filter((detection) => !(detection.centerX > 0.84 && /^(?:SR|ZRL|SST|GST|TAX)$/i.test(detection.text.trim())));
   const name = nameDetections.map((item) => item.text).join(' ').trim();
   if (!name || NON_ITEM_PATTERN.test(name)) return null;
 
@@ -208,6 +217,26 @@ function inferQuantity(tokens: NumericToken[], unitPrice: NumericToken | null): 
   return candidate?.quantity ?? (unitPrice ? 1 : null);
 }
 
+function findArithmeticPair(tokens: NumericToken[], totalCents: number): { quantity: NumericToken; unitPrice: NumericToken } | null {
+  const candidates: Array<{ quantity: NumericToken; unitPrice: NumericToken; difference: number; distance: number }> = [];
+  for (const quantity of tokens) {
+    if (quantity.quantity === null) continue;
+    for (const unitPrice of tokens) {
+      if (unitPrice === quantity || unitPrice.cents <= 0) continue;
+      const difference = Math.abs(quantity.quantity * unitPrice.cents - totalCents);
+      if (difference > 1) continue;
+      candidates.push({
+        quantity,
+        unitPrice,
+        difference,
+        distance: Math.abs(unitPrice.detection.centerX - quantity.detection.centerX),
+      });
+    }
+  }
+  const best = candidates.sort((left, right) => left.difference - right.difference || right.distance - left.distance)[0];
+  return best ? { quantity: best.quantity, unitPrice: best.unitPrice } : null;
+}
+
 function chooseByColumn(tokens: NumericToken[], columns: ReceiptColumn[], kind: ReceiptColumn['kind']): NumericToken | null {
   const column = columns.find((candidate) => candidate.kind === kind);
   if (!column || tokens.length === 0) return null;
@@ -250,15 +279,25 @@ function findSummaryAmount(rows: LayoutRow[], pattern: RegExp, preserveSign = fa
 }
 
 function amountFromRow(row: LayoutRow, preserveSign: boolean): { value: number; detections: OcrDetection[] } | null {
-  const values = row.detections.map((detection) => ({ detection, cents: parseMoneyCents(detection.text) }))
-    .filter((entry): entry is { detection: OcrDetection; cents: number } => entry.cents !== null);
-  const selected = values[values.length - 1];
+  type AmountCandidate = { detection: OcrDetection; cents: number; detections?: OcrDetection[] };
+  const ordered = [...row.detections].sort((left, right) => left.centerX - right.centerX);
+  const values: AmountCandidate[] = ordered.flatMap((detection) => {
+    const cents = parseMoneyCents(detection.text);
+    return cents === null ? [] : [{ detection, cents }];
+  });
+  const fragments: AmountCandidate[] = ordered.flatMap((detection, index) => {
+    const next = ordered[index + 1];
+    if (!next || !/^(?:RM|MYR)?\d+$/i.test(detection.text.trim()) || !/^[.,]\d{2}$/.test(next.text.trim())) return [];
+    const cents = parseMoneyCents(`${detection.text.trim()}${next.text.trim()}`);
+    return cents === null ? [] : [{ detection: next, cents, detections: [detection, next] }];
+  });
+  const selected = fragments[fragments.length - 1] ?? values[values.length - 1];
   if (!selected) return null;
   const textSuggestsNegative = /[-−]/.test(row.text);
   const value = preserveSign
     ? (textSuggestsNegative ? -Math.abs(selected.cents) : selected.cents)
     : Math.abs(selected.cents);
-  return { value, detections: [selected.detection] };
+  return { value, detections: selected.detections ?? [selected.detection] };
 }
 
 function findRestaurantName(rows: LayoutRow[], itemBoundary: number): ParsedReceipt['restaurantName'] {
@@ -266,7 +305,7 @@ function findRestaurantName(rows: LayoutRow[], itemBoundary: number): ParsedRece
     /[A-Za-z\u3400-\u9fff]{3}/.test(row.text)
     && !NON_ITEM_PATTERN.test(row.text)
     && !DATE_TIME_PATTERN.test(row.text)
-    && !HEADER_PATTERN.test(row.text)
+    && !isHeaderRow(row)
     && row.detections.every((item) => parseMoneyCents(item.text) === null));
   return candidate
     ? { value: candidate.text, confidence: candidate.confidence, mapping: mapping(candidate.detections) }
@@ -274,17 +313,26 @@ function findRestaurantName(rows: LayoutRow[], itemBoundary: number): ParsedRece
 }
 
 function isSummaryRow(row: LayoutRow): boolean {
-  return Object.values(SUMMARY_PATTERNS).some((pattern) => pattern.test(row.text));
+  if (isHeaderRow(row) || /\btax\s+invoice\b/i.test(row.text)) return false;
+  const hasAmount = row.detections.some((detection) => parseMoneyCents(detection.text) !== null);
+  return hasAmount && Object.values(SUMMARY_PATTERNS).some((pattern) => pattern.test(row.text));
 }
 
 function isNonItemRow(row: LayoutRow): boolean {
   return NON_ITEM_PATTERN.test(row.text) || DATE_TIME_PATTERN.test(row.text) || isSummaryRow(row);
 }
 
+function isHeaderRow(row: LayoutRow): boolean {
+  if (HEADER_PATTERN.test(row.text)) return true;
+  const matches = row.text.match(/\b(?:item|description|particulars?|qty|quantity|s\/?price|u\/?price|unit|price|amount|total|amt|tax)\b/gi);
+  return (matches?.length ?? 0) >= 2;
+}
+
 function toNumericToken(detection: OcrDetection): NumericToken | null {
   const cents = parseMoneyCents(detection.text);
-  if (cents === null) return null;
-  return { detection, cents, quantity: parseQuantity(detection.text) };
+  const quantity = parseQuantity(detection.text);
+  if (cents === null && quantity === null) return null;
+  return { detection, cents: cents ?? (quantity ?? 0) * 100, quantity };
 }
 
 function mapping(detections: OcrDetection[]): FieldMapping {

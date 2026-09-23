@@ -28,8 +28,8 @@ describe('OCR foundation', () => {
     const clear = { lowContrast: false, underexposed: false, overexposed: false };
     expect(getSecondPassReason(reliable, clear)).toBeNull();
     expect(getSecondPassReason({ ...reliable, confidence: 0.5 }, clear)).toBe('very_low_ocr_confidence');
-    expect(getSecondPassReason({ ...reliable, confidence: 0.7 }, clear)).toBeNull();
-    expect(getSecondPassReason({ ...reliable, confidence: 0.7 }, { ...clear, lowContrast: true })).toBe('image_quality_and_ocr_confidence');
+    expect(getSecondPassReason({ ...reliable, confidence: 0.7 }, clear)).toBe('low_ocr_confidence');
+    expect(getSecondPassReason({ ...reliable, confidence: 0.7 }, { ...clear, lowContrast: true })).toBe('low_ocr_confidence');
     expect(getSecondPassReason({ ...reliable, detections: [] }, clear)).toBe('too_few_text_regions');
   });
 });

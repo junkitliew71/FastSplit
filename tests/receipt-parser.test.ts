@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { reconstructLayout } from '../server/layout.js';
-import { parseMoneyCents } from '../server/money.js';
+import { parseMoneyCents, parseQuantity } from '../server/money.js';
 import { parseReceipt } from '../server/receipt-parser.js';
 import type { OcrDetection } from '../server/types.js';
 
@@ -94,9 +94,27 @@ describe('receipt layout and parser', () => {
     expect(parsed.items[0]).toMatchObject({ name: 'Special Chicken Rice', quantity: 1, unitPriceCents: 850, totalCents: 850 });
   });
 
+  it('parses Malaysian GST invoices with numeric rows followed by item names and dual prices', () => {
+    detectionNumber = 0;
+    const parsed = parseReceipt([
+      word('KEDAI', 0.28, 0.04), word('PAPAN', 0.39, 0.04), word('YEW', 0.51, 0.04), word('CHUAN', 0.60, 0.04),
+      word('Item', 0.04, 0.20), word('Qty', 0.31, 0.20), word('S/Price', 0.44, 0.20), word('S/Price', 0.59, 0.20), word('Amount', 0.77, 0.20), word('Tax', 0.92, 0.20),
+      word('100135', 0.04, 0.26), word('4', 0.32, 0.26), word('8.00', 0.45, 0.26), word('8.48', 0.60, 0.26), word('33.92', 0.78, 0.26), word('SR', 0.93, 0.26),
+      word('BESI', 0.04, 0.30), word('R', 0.12, 0.30), word('5.5', 0.16, 0.30), word('(CQ)', 0.23, 0.30),
+      word('Total', 0.50, 0.44), word('Sales', 0.58, 0.44), word('(Excluding', 0.66, 0.44), word('GST)', 0.76, 0.44), word('32.00', 0.86, 0.44),
+      word('Total', 0.46, 0.50), word('GST', 0.56, 0.50), word('1.92', 0.86, 0.50),
+      word('Total', 0.40, 0.56), word('Sales', 0.50, 0.56), word('(Inclusive', 0.60, 0.56), word('of', 0.72, 0.56), word('GST)', 0.76, 0.56), word('33.92', 0.86, 0.56),
+    ]);
+    expect(parsed.restaurantName.value).toBe('KEDAI PAPAN YEW CHUAN');
+    expect(parsed.items).toHaveLength(1);
+    expect(parsed.items[0]).toMatchObject({ name: 'BESI R 5.5 (CQ)', quantity: 4, unitPriceCents: 848, totalCents: 3392 });
+    expect(parsed.items[0]?.validation.valid).toBe(true);
+  });
+
   it('parses Malaysian money without floating-point arithmetic', () => {
     expect(parseMoneyCents('RM 2.10')).toBe(210);
     expect(parseMoneyCents('MYR2.10')).toBe(210);
     expect(parseMoneyCents('(0.05)')).toBe(-5);
+    expect(parseQuantity('1,200')).toBe(1200);
   });
 });

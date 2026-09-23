@@ -3,7 +3,7 @@ import type { BoundingBox, LayoutRow, OcrDetection, ReceiptColumn } from './type
 const HEADER_PATTERNS: Array<[ReceiptColumn['kind'], RegExp]> = [
   ['description', /^(?:item|description|particulars?)$/i],
   ['quantity', /^(?:qty|quantity)$/i],
-  ['unitPrice', /^(?:unit|price|u\/p|unit price)$/i],
+  ['unitPrice', /^(?:unit|price|s\/?price|u\/?price|u\/p|unit price)$/i],
   ['total', /^(?:amount|total|amt)$/i],
 ];
 

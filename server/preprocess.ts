@@ -3,7 +3,7 @@ import type { ImageQuality } from './types.js';
 
 export type PreparedServerImage = {
   firstPass: Buffer;
-  createSecondPass: () => Promise<Buffer>;
+  createSecondPass: () => Promise<{ image: Buffer; width: number; height: number; offsetX: number; offsetY: number }>;
   width: number;
   height: number;
   format: string | null;
@@ -11,6 +11,7 @@ export type PreparedServerImage = {
 };
 
 const SERVER_MAX_LONG_SIDE = 2200;
+const SERVER_MIN_OCR_LONG_SIDE = 1800;
 
 export async function preprocessImage(input: Buffer): Promise<PreparedServerImage> {
   const base = sharp(input, { failOn: 'error', limitInputPixels: 40_000_000 }).rotate();
@@ -34,7 +35,7 @@ export async function preprocessImage(input: Buffer): Promise<PreparedServerImag
   const normalizedMetadata = await sharp(firstPass).metadata();
   return {
     firstPass,
-    createSecondPass: () => enhancedPass(firstPass, quality),
+    createSecondPass: () => enhancedPass(firstPass, quality, normalizedMetadata.width ?? metadata.width, normalizedMetadata.height ?? metadata.height),
     width: normalizedMetadata.width ?? metadata.width,
     height: normalizedMetadata.height ?? metadata.height,
     format: metadata.format ?? null,
@@ -43,7 +44,16 @@ export async function preprocessImage(input: Buffer): Promise<PreparedServerImag
 }
 
 function resizeToLimit(image: sharp.Sharp, width: number, height: number): sharp.Sharp {
-  if (Math.max(width, height) <= SERVER_MAX_LONG_SIDE) return image;
+  const longSide = Math.max(width, height);
+  if (longSide < SERVER_MIN_OCR_LONG_SIDE) {
+    return image.resize({
+      width: width >= height ? SERVER_MIN_OCR_LONG_SIDE : undefined,
+      height: height > width ? SERVER_MIN_OCR_LONG_SIDE : undefined,
+      fit: 'inside',
+      kernel: sharp.kernel.lanczos3,
+    }).sharpen({ sigma: 0.7, m1: 0.5, m2: 1 });
+  }
+  if (longSide <= SERVER_MAX_LONG_SIDE) return image;
   return image.resize({
     width: width >= height ? SERVER_MAX_LONG_SIDE : undefined,
     height: height > width ? SERVER_MAX_LONG_SIDE : undefined,
@@ -52,12 +62,20 @@ function resizeToLimit(image: sharp.Sharp, width: number, height: number): sharp
   });
 }
 
-async function enhancedPass(input: Buffer, quality: ImageQuality): Promise<Buffer> {
-  let pipeline = sharp(input).greyscale();
+async function enhancedPass(input: Buffer, quality: ImageQuality, width: number, height: number): Promise<{ image: Buffer; width: number; height: number; offsetX: number; offsetY: number }> {
+  const backgroundPhoto = quality.contrast > 0.45 && quality.brightness < 0.7;
+  const offsetX = backgroundPhoto ? Math.round(width * 0.05) : 0;
+  const offsetY = backgroundPhoto ? Math.round(height * 0.14) : 0;
+  const passWidth = backgroundPhoto ? Math.round(width * 0.9) : width;
+  const passHeight = backgroundPhoto ? Math.round(height * 0.82) : height;
+  let pipeline = sharp(input);
+  if (backgroundPhoto) pipeline = pipeline.extract({ left: offsetX, top: offsetY, width: passWidth, height: passHeight });
+  pipeline = pipeline.greyscale();
   if (quality.lowContrast || quality.underexposed || quality.overexposed) {
-    pipeline = pipeline.normalize({ lower: 2, upper: 98 });
+    pipeline = pipeline.clahe({ width: 8, height: 8, maxSlope: 3 }).normalize({ lower: 2, upper: 98 });
   }
-  return pipeline.sharpen({ sigma: 1, m1: 0.8, m2: 1.6 }).jpeg({ quality: 94 }).toBuffer();
+  const image = await pipeline.sharpen({ sigma: 0.9, m1: 0.7, m2: 1.4 }).jpeg({ quality: 96 }).toBuffer();
+  return { image, width: passWidth, height: passHeight, offsetX, offsetY };
 }
 
 function round(value: number): number {

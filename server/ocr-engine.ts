@@ -1,4 +1,4 @@
-import { createWorker, type Worker } from 'tesseract.js';
+import { createWorker, PSM, type Worker } from 'tesseract.js';
 import type { OcrDetection, OcrPass } from './types.js';
 
 type RawBox = { x0: number; y0: number; x1: number; y1: number };
@@ -25,8 +25,8 @@ export class OcrEngine {
     await this.#getWorker();
   }
 
-  recognize(image: Buffer, width: number, height: number): Promise<OcrPass> {
-    const task = this.#queue.then(() => this.#recognizeWithTimeout(image, width, height));
+  recognize(image: Buffer, width: number, height: number, layout: 'auto' | 'receipt' = 'auto'): Promise<OcrPass> {
+    const task = this.#queue.then(() => this.#recognizeWithTimeout(image, width, height, layout));
     this.#queue = task.then(() => undefined, () => undefined);
     return task;
   }
@@ -44,10 +44,15 @@ export class OcrEngine {
     return this.#worker;
   }
 
-  async #recognizeWithTimeout(image: Buffer, width: number, height: number): Promise<OcrPass> {
+  async #recognizeWithTimeout(image: Buffer, width: number, height: number, layout: 'auto' | 'receipt'): Promise<OcrPass> {
     const worker = await this.#getWorker();
     let timeout: NodeJS.Timeout | undefined;
     try {
+      if (layout === 'receipt') {
+        await worker.setParameters({ tessedit_pageseg_mode: PSM.SINGLE_BLOCK, preserve_interword_spaces: '1' });
+      } else {
+        await worker.setParameters({ tessedit_pageseg_mode: PSM.AUTO });
+      }
       const result = await Promise.race([
         worker.recognize(image, {}, { blocks: true, text: true }),
         new Promise<never>((_, reject) => {

@@ -11,9 +11,9 @@ export function parseMoneyCents(text: string): number | null {
 }
 
 export function parseQuantity(text: string): number | null {
-  const match = text.trim().match(/^(\d{1,3})(?:\s*[x×])?$/i);
+  const match = text.trim().match(/^(\d{1,5}(?:,\d{3})?)(?:\s*[x×])?$/i);
   if (!match?.[1]) return null;
-  const value = Number(match[1]);
+  const value = Number(match[1].replace(',', ''));
   return value > 0 ? value : null;
 }
 

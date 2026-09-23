@@ -14,7 +14,7 @@ const prepared = await preprocessImage(fixture);
 const legacyStart = performance.now();
 await engine.recognize(prepared.firstPass, prepared.width, prepared.height);
 const enhanced = await prepared.createSecondPass();
-await engine.recognize(enhanced, prepared.width, prepared.height);
+await engine.recognize(enhanced.image, enhanced.width, enhanced.height, 'receipt');
 const legacyTwoPassMs = performance.now() - legacyStart;
 
 const optimized = await processReceipt(fixture, engine);
