@@ -1,0 +1,9 @@
+node_modules/
+.pnpm-store/
+dist/
+.tsbuild/
+coverage/
+.env
+*.log
+*.tsbuildinfo
+*.traineddata
