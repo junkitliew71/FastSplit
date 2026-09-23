@@ -139,6 +139,8 @@ app.innerHTML = `
         <div id="final-total" class="final-total"></div>
         <div id="person-totals" class="person-totals"></div>
         <div id="allocation-check" class="allocation-check"></div>
+        <button id="share-result" class="primary share-result" type="button">⌯&nbsp; Share result</button>
+        <p id="share-message" class="save-message" aria-live="polite"></p>
         <button id="start-over" class="primary" type="button">Split another bill</button>
       </section>
     </section>
@@ -193,6 +195,8 @@ const finalTotal = document.querySelector<HTMLDivElement>('#final-total')!;
 const personTotals = document.querySelector<HTMLDivElement>('#person-totals')!;
 const allocationCheck = document.querySelector<HTMLDivElement>('#allocation-check')!;
 const startOver = document.querySelector<HTMLButtonElement>('#start-over')!;
+const shareResult = document.querySelector<HTMLButtonElement>('#share-result')!;
+const shareMessage = document.querySelector<HTMLParagraphElement>('#share-message')!;
 const manualRestaurant = document.querySelector<HTMLInputElement>('#manual-restaurant')!;
 const manualItems = document.querySelector<HTMLDivElement>('#manual-items')!;
 const manualAddItem = document.querySelector<HTMLButtonElement>('#manual-add-item')!;
@@ -605,6 +609,44 @@ function renderFinalSummary(): void {
   allocationCheck.innerHTML = `<div><span>Bill total</span><strong>${formatMoney(grand)}</strong></div><div><span>Allocated</span><strong>${formatMoney(allocated)}</strong></div><div class="${allocated === grand ? 'balanced' : 'unbalanced'}"><span>${allocated === grand ? '✓ Difference' : '△ Difference'}</span><strong>${formatMoney(grand - allocated)}</strong></div>`;
 }
 
+function buildShareText(): string {
+  if (!reviewModel || !currentResult) return '';
+  const shares = calculateShares();
+  const grand = reviewModel.summary.grandTotal.valueCents ?? shares.reduce((sum, person) => sum + person.amountCents, 0);
+  const restaurant = currentResult.parsed.restaurantName.value || 'FastSplit bill';
+  return [
+    `FastSplit · ${restaurant}`,
+    `Bill total: ${formatMoney(grand)}`,
+    '',
+    ...shares.map((person) => `${person.name}: ${formatMoney(person.amountCents)}`),
+    '',
+    'Split fairly with FastSplit.',
+  ].join('\n');
+}
+
+async function shareBillResult(): Promise<void> {
+  const text = buildShareText();
+  if (!text) return;
+  shareMessage.textContent = '';
+  try {
+    if (navigator.share) {
+      await navigator.share({ title: 'FastSplit bill', text });
+      shareMessage.textContent = 'Share sheet opened.';
+    } else {
+      await navigator.clipboard.writeText(text);
+      shareMessage.textContent = 'Bill copied as text. Paste it into WhatsApp or your messaging app.';
+    }
+  } catch (error) {
+    if (error instanceof DOMException && error.name === 'AbortError') return;
+    try {
+      await navigator.clipboard.writeText(text);
+      shareMessage.textContent = 'Bill copied as text. Paste it into WhatsApp or your messaging app.';
+    } catch {
+      shareMessage.textContent = 'Could not open sharing. Please try again.';
+    }
+  }
+}
+
 function formatMoney(cents: number | null): string {
   return cents === null ? '—' : `RM${(cents / 100).toFixed(2)}`;
 }
@@ -739,6 +781,7 @@ splitContinue.addEventListener('click', () => {
   goToStep(5);
 });
 startOver.addEventListener('click', () => { reset(); scannerSection.classList.add('hidden'); hero.classList.remove('hidden'); });
+shareResult.addEventListener('click', () => void shareBillResult());
 wizard.addEventListener('click', (event) => {
   const button = (event.target as HTMLElement).closest<HTMLButtonElement>('[data-step]');
   const target = Number(button?.dataset.step ?? 0);
