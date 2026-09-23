@@ -64,8 +64,16 @@ app.innerHTML = `
       </div>
       <button id="manual-hero" class="manual-link" type="button">⌕&nbsp; Enter manually&nbsp; →</button>
     </section>
-    <section class="scanner" aria-labelledby="scan-title">
+    <section class="scanner hidden" aria-labelledby="scan-title">
       <button id="scanner-back" class="history-back" type="button">‹&nbsp; Back</button>
+      <nav id="wizard" class="wizard" aria-label="Bill steps">
+        <button class="active" data-step="1" type="button"><span>1</span>Receipt</button>
+        <button data-step="2" type="button"><span>2</span>Review</button>
+        <button data-step="3" type="button"><span>3</span>People</button>
+        <button data-step="4" type="button"><span>4</span>Split</button>
+        <button data-step="5" type="button"><span>5</span>Summary</button>
+      </nav>
+      <div id="receipt-step" class="workflow-step">
       <p class="step">BRING THE BILL</p>
       <div class="section-heading"><div><h2 id="scan-title">Scan your receipt</h2><p class="scanner-copy">Keep the whole receipt in frame, with readable prices.</p></div><span class="privacy">Processed privately</span></div>
       <label class="dropzone" id="dropzone">
@@ -74,7 +82,7 @@ app.innerHTML = `
         <small>JPG, PNG, WebP · large photos are resized before upload</small>
       </label>
       <div id="workspace" class="workspace hidden">
-        <div class="preview-wrap"><img id="preview" alt="Receipt preview" /><div id="boxes" class="boxes"></div></div>
+        <div class="preview-column"><div class="preview-wrap"><img id="preview" alt="Receipt preview" /><div id="boxes" class="boxes"></div></div></div>
         <div class="result-panel">
           <div id="status" class="status">Ready to scan</div>
           <p id="image-info" class="image-info"></p>
@@ -89,12 +97,35 @@ app.innerHTML = `
               <button id="clear-field" class="compact-button" disabled>Clear field</button>
             </div>
             <div id="review-fields"></div>
+            <button id="confirm-review" class="primary" type="button">Confirm receipt →</button>
             <button id="save-history" class="primary history-save hidden" type="button">Save to History</button>
             <p id="save-message" class="save-message" aria-live="polite"></p>
           </section>
           <details id="raw-detections" class="raw-detections hidden"><summary>Detected OCR text</summary><ol id="detections" class="detections"></ol></details>
         </div>
       </div>
+      </div>
+      <section id="people-step" class="workflow-step hidden">
+        <p class="step">WHO IS SHARING?</p><h2>Add people</h2>
+        <p class="scanner-copy">Add everyone at the table before assigning the food.</p>
+        <form id="people-form" class="people-form"><input id="person-name" maxlength="40" placeholder="Name" required><button type="submit">+ Add person</button></form>
+        <div id="people-list" class="people-list"></div>
+        <button id="people-continue" class="primary" type="button" disabled>Continue to split →</button>
+      </section>
+      <section id="split-step" class="workflow-step hidden">
+        <p class="step">WHO HAD WHAT?</p><h2>Split the items</h2>
+        <p class="scanner-copy">Select one or more people for every item. Shared items are divided equally.</p>
+        <div id="assignment-list" class="assignment-list"></div>
+        <button id="split-continue" class="primary" type="button">Review summary →</button>
+      </section>
+      <section id="final-step" class="workflow-step hidden">
+        <p class="step">ALL SQUARE</p><h2>Good food. Fair split.</h2>
+        <p id="final-restaurant" class="scanner-copy"></p>
+        <div id="final-total" class="final-total"></div>
+        <div id="person-totals" class="person-totals"></div>
+        <div id="allocation-check" class="allocation-check"></div>
+        <button id="start-over" class="primary" type="button">Split another bill</button>
+      </section>
     </section>
     </div>
     <section id="history-view" class="history-view hidden" aria-labelledby="history-title">
@@ -128,6 +159,24 @@ const uploadHero = document.querySelector<HTMLButtonElement>('#upload-hero')!;
 const manualHero = document.querySelector<HTMLButtonElement>('#manual-hero')!;
 const scannerBack = document.querySelector<HTMLButtonElement>('#scanner-back')!;
 const scannerSection = document.querySelector<HTMLElement>('.scanner')!;
+const hero = document.querySelector<HTMLElement>('.hero')!;
+const wizard = document.querySelector<HTMLElement>('#wizard')!;
+const receiptStep = document.querySelector<HTMLElement>('#receipt-step')!;
+const peopleStep = document.querySelector<HTMLElement>('#people-step')!;
+const splitStep = document.querySelector<HTMLElement>('#split-step')!;
+const finalStep = document.querySelector<HTMLElement>('#final-step')!;
+const confirmReviewButton = document.querySelector<HTMLButtonElement>('#confirm-review')!;
+const peopleForm = document.querySelector<HTMLFormElement>('#people-form')!;
+const personName = document.querySelector<HTMLInputElement>('#person-name')!;
+const peopleList = document.querySelector<HTMLDivElement>('#people-list')!;
+const peopleContinue = document.querySelector<HTMLButtonElement>('#people-continue')!;
+const assignmentList = document.querySelector<HTMLDivElement>('#assignment-list')!;
+const splitContinue = document.querySelector<HTMLButtonElement>('#split-continue')!;
+const finalRestaurant = document.querySelector<HTMLParagraphElement>('#final-restaurant')!;
+const finalTotal = document.querySelector<HTMLDivElement>('#final-total')!;
+const personTotals = document.querySelector<HTMLDivElement>('#person-totals')!;
+const allocationCheck = document.querySelector<HTMLDivElement>('#allocation-check')!;
+const startOver = document.querySelector<HTMLButtonElement>('#start-over')!;
 const historyBack = document.querySelector<HTMLButtonElement>('#history-back')!;
 const historyStatus = document.querySelector<HTMLDivElement>('#history-status')!;
 const historyList = document.querySelector<HTMLDivElement>('#history-list')!;
@@ -161,6 +210,32 @@ let mappingHistory: ReviewModel[] = [];
 let currentIdentity: AuthIdentity | null = null;
 let currentHistoryId: string | null = null;
 let currentHistoryImage: Pick<ReceiptHistoryRecord, 'receiptImagePath' | 'receiptImageUrl'> | undefined;
+type Person = { id: string; name: string };
+let people: Person[] = [];
+let assignments = new Map<string, Set<string>>();
+let currentStep = 1;
+
+function beginFlow(): void {
+  hero.classList.add('hidden');
+  scannerSection.classList.remove('hidden');
+  goToStep(1);
+  window.scrollTo({ top: 0, behavior: 'smooth' });
+}
+
+function goToStep(step: number): void {
+  currentStep = step;
+  receiptStep.classList.toggle('hidden', step !== 1 && step !== 2);
+  peopleStep.classList.toggle('hidden', step !== 3);
+  splitStep.classList.toggle('hidden', step !== 4);
+  finalStep.classList.toggle('hidden', step !== 5);
+  scannerSection.dataset.step = String(step);
+  for (const button of wizard.querySelectorAll<HTMLButtonElement>('[data-step]')) {
+    const buttonStep = Number(button.dataset.step);
+    button.classList.toggle('active', buttonStep === step);
+    button.classList.toggle('complete', buttonStep < step);
+  }
+  window.scrollTo({ top: 0, behavior: 'smooth' });
+}
 
 function reset(): void {
   controller?.abort();
@@ -181,6 +256,10 @@ function reset(): void {
   currentHistoryId = null;
   currentHistoryImage = undefined;
   saveMessage.textContent = '';
+  people = [];
+  assignments = new Map();
+  renderPeople();
+  goToStep(1);
 }
 
 function renderResult(result: ReceiptOcrResponse, restoredReview?: ReviewModel): void {
@@ -225,6 +304,7 @@ function renderResult(result: ReceiptOcrResponse, restoredReview?: ReviewModel):
     detections.append(row);
   }
   renderReview();
+  goToStep(2);
 }
 
 function renderReview(): void {
@@ -357,6 +437,59 @@ function updateBoxStates(): void {
   }
 }
 
+function renderPeople(): void {
+  peopleList.innerHTML = people.map((person, index) => `<div class="person-row" data-person-id="${person.id}"><span>${String(index + 1).padStart(2, '0')}</span><strong>${escapeHtml(person.name)}</strong><button type="button" aria-label="Remove ${escapeHtml(person.name)}">Remove</button></div>`).join('');
+  peopleContinue.disabled = people.length === 0;
+}
+
+function renderAssignments(): void {
+  if (!reviewModel) return;
+  assignmentList.innerHTML = reviewModel.items.map((item, index) => {
+    const selected = assignments.get(item.id) ?? new Set<string>();
+    return `<article class="assignment-card"><div><small>ITEM ${String(index + 1).padStart(2, '0')}</small><strong>${escapeHtml(item.name || 'Unnamed item')}</strong><span>${formatMoney(item.totalCents)}</span></div><div class="person-options">${people.map((person) => `<label><input type="checkbox" data-item-id="${item.id}" data-person-id="${person.id}" ${selected.has(person.id) ? 'checked' : ''}><span>${escapeHtml(person.name)}</span></label>`).join('')}</div></article>`;
+  }).join('');
+}
+
+function calculateShares(): Array<Person & { amountCents: number }> {
+  const shares = new Map(people.map((person) => [person.id, 0]));
+  if (!reviewModel || people.length === 0) return people.map((person) => ({ ...person, amountCents: 0 }));
+  for (const item of reviewModel.items) {
+    const owners = [...(assignments.get(item.id) ?? [])];
+    if (!owners.length || item.totalCents === null) continue;
+    const base = Math.floor(item.totalCents / owners.length);
+    let remainder = item.totalCents - base * owners.length;
+    owners.forEach((personId) => {
+      shares.set(personId, (shares.get(personId) ?? 0) + base + (remainder-- > 0 ? 1 : 0));
+    });
+  }
+  const foodAllocated = [...shares.values()].reduce((sum, value) => sum + value, 0);
+  const grandTotal = reviewModel.summary.grandTotal.valueCents ?? foodAllocated;
+  let extras = grandTotal - foodAllocated;
+  if (extras !== 0) {
+    const weights = people.map((person) => shares.get(person.id) ?? 0);
+    const weightTotal = weights.reduce((sum, value) => sum + value, 0);
+    const denominator = weightTotal || people.length;
+    people.forEach((person, index) => {
+      const weight = weightTotal ? weights[index] ?? 0 : 1;
+      const portion = index === people.length - 1 ? extras : Math.round((grandTotal - foodAllocated) * weight / denominator);
+      shares.set(person.id, (shares.get(person.id) ?? 0) + portion);
+      extras -= portion;
+    });
+  }
+  return people.map((person) => ({ ...person, amountCents: shares.get(person.id) ?? 0 }));
+}
+
+function renderFinalSummary(): void {
+  if (!reviewModel || !currentResult) return;
+  const shares = calculateShares();
+  const grand = reviewModel.summary.grandTotal.valueCents ?? shares.reduce((sum, person) => sum + person.amountCents, 0);
+  const allocated = shares.reduce((sum, person) => sum + person.amountCents, 0);
+  finalRestaurant.textContent = currentResult.parsed.restaurantName.value || 'Receipt';
+  finalTotal.innerHTML = `<span>Everyone’s share, sorted.</span><strong>${formatMoney(grand)}</strong><small>${people.length} people · ${reviewModel.items.length} items</small>`;
+  personTotals.innerHTML = shares.map((person) => `<article><span>${escapeHtml(person.name.charAt(0).toUpperCase())}</span><strong>${escapeHtml(person.name)}</strong><b>${formatMoney(person.amountCents)}</b></article>`).join('');
+  allocationCheck.innerHTML = `<div><span>Bill total</span><strong>${formatMoney(grand)}</strong></div><div><span>Allocated</span><strong>${formatMoney(allocated)}</strong></div><div class="${allocated === grand ? 'balanced' : 'unbalanced'}"><span>${allocated === grand ? '✓ Difference' : '△ Difference'}</span><strong>${formatMoney(grand - allocated)}</strong></div>`;
+}
+
 function formatMoney(cents: number | null): string {
   return cents === null ? '—' : `RM${(cents / 100).toFixed(2)}`;
 }
@@ -376,6 +509,7 @@ function escapeHtml(value: string): string {
 input.addEventListener('change', async () => {
   const file = input.files?.[0];
   if (!file) return;
+  beginFlow();
   status.textContent = 'Improving image…';
   try {
     prepared = await prepareReceiptImage(file);
@@ -435,11 +569,14 @@ saveHistoryButton.addEventListener('click', async () => {
 });
 
 historyNav.addEventListener('click', () => void showHistory());
-splitNav.addEventListener('click', () => scannerSection.scrollIntoView({ behavior: 'smooth' }));
-scanHero.addEventListener('click', () => input.click());
-uploadHero.addEventListener('click', () => input.click());
-manualHero.addEventListener('click', () => scannerSection.scrollIntoView({ behavior: 'smooth' }));
-scannerBack.addEventListener('click', () => window.scrollTo({ top: 0, behavior: 'smooth' }));
+splitNav.addEventListener('click', beginFlow);
+scanHero.addEventListener('click', () => { beginFlow(); input.click(); });
+uploadHero.addEventListener('click', () => { beginFlow(); input.click(); });
+manualHero.addEventListener('click', beginFlow);
+scannerBack.addEventListener('click', () => {
+  if (currentStep > 1) goToStep(currentStep - 1);
+  else { scannerSection.classList.add('hidden'); hero.classList.remove('hidden'); window.scrollTo({ top: 0, behavior: 'smooth' }); }
+});
 historyBack.addEventListener('click', () => {
   historyView.classList.add('hidden');
   scanView.classList.remove('hidden');
@@ -450,6 +587,47 @@ historyList.addEventListener('click', (event) => {
   if (!button || !id) return;
   const operation = button.dataset.action === 'delete' ? removeHistoryReceipt(id) : openHistoryReceipt(id);
   operation.catch((error) => { historyStatus.textContent = friendlyHistoryError(error); });
+});
+
+confirmReviewButton.addEventListener('click', () => goToStep(3));
+peopleForm.addEventListener('submit', (event) => {
+  event.preventDefault();
+  const name = personName.value.trim();
+  if (!name) return;
+  people.push({ id: crypto.randomUUID(), name });
+  personName.value = '';
+  renderPeople();
+  personName.focus();
+});
+peopleList.addEventListener('click', (event) => {
+  const row = (event.target as HTMLElement).closest<HTMLElement>('[data-person-id]');
+  if (!(event.target instanceof HTMLButtonElement) || !row?.dataset.personId) return;
+  const id = row.dataset.personId;
+  people = people.filter((person) => person.id !== id);
+  for (const selected of assignments.values()) selected.delete(id);
+  renderPeople();
+});
+peopleContinue.addEventListener('click', () => { renderAssignments(); goToStep(4); });
+assignmentList.addEventListener('change', (event) => {
+  const checkbox = event.target as HTMLInputElement;
+  const itemId = checkbox.dataset.itemId;
+  const personId = checkbox.dataset.personId;
+  if (!itemId || !personId) return;
+  const selected = assignments.get(itemId) ?? new Set<string>();
+  if (checkbox.checked) selected.add(personId); else selected.delete(personId);
+  assignments.set(itemId, selected);
+});
+splitContinue.addEventListener('click', () => {
+  const missing = reviewModel?.items.some((item) => (assignments.get(item.id)?.size ?? 0) === 0);
+  if (missing && !window.confirm('Some items are not assigned. Continue anyway?')) return;
+  renderFinalSummary();
+  goToStep(5);
+});
+startOver.addEventListener('click', () => { reset(); scannerSection.classList.add('hidden'); hero.classList.remove('hidden'); });
+wizard.addEventListener('click', (event) => {
+  const button = (event.target as HTMLElement).closest<HTMLButtonElement>('[data-step]');
+  const target = Number(button?.dataset.step ?? 0);
+  if (target > 0 && target < currentStep) goToStep(target);
 });
 
 cancelButton.addEventListener('click', reset);
