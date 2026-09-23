@@ -73,6 +73,7 @@ export type ParsedReceipt = {
     itemSumCents: number;
     subtotalCents: number | null;
     grandTotalCents: number | null;
+    mappings: { subtotal: FieldMapping; grandTotal: FieldMapping };
   };
   validation: {
     itemArithmeticValid: boolean;

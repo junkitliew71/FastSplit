@@ -69,6 +69,10 @@ export function parseReceipt(detections: OcrDetection[]): ParsedReceipt {
       itemSumCents,
       subtotalCents: subtotal?.value ?? null,
       grandTotalCents: grandTotal?.value ?? null,
+      mappings: {
+        subtotal: mapping(subtotal?.detections ?? []),
+        grandTotal: mapping(grandTotal?.detections ?? []),
+      },
     },
     validation: {
       itemArithmeticValid,

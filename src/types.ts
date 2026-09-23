@@ -41,6 +41,12 @@ export type ReceiptOcrResponse = {
       totalCents: number | null;
       confidence: number;
       needsReview: boolean;
+      mappings: {
+        name: { ocrIds: string[] };
+        quantity: { ocrIds: string[] };
+        unitPrice: { ocrIds: string[] };
+        total: { ocrIds: string[] };
+      };
     }>;
     charges: {
       serviceChargeCents: number;
@@ -48,8 +54,14 @@ export type ReceiptOcrResponse = {
       discountCents: number;
       roundingCents: number;
       otherCents: number;
+      mappings: Record<string, { ocrIds: string[] }>;
     };
-    totals: { itemSumCents: number; subtotalCents: number | null; grandTotalCents: number | null };
+    totals: {
+      itemSumCents: number;
+      subtotalCents: number | null;
+      grandTotalCents: number | null;
+      mappings: { subtotal: { ocrIds: string[] }; grandTotal: { ocrIds: string[] } };
+    };
     validation: {
       itemArithmeticValid: boolean;
       subtotalChecked: boolean;

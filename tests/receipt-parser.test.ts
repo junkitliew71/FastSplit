@@ -55,7 +55,7 @@ describe('receipt layout and parser', () => {
     expect(parsed.charges).toMatchObject({
       serviceChargeCents: 100, taxCents: 124, discountCents: 100, roundingCents: -1,
     });
-    expect(parsed.totals).toEqual({ itemSumCents: 2060, subtotalCents: 2060, grandTotalCents: 2183 });
+    expect(parsed.totals).toMatchObject({ itemSumCents: 2060, subtotalCents: 2060, grandTotalCents: 2183 });
     expect(parsed.validation).toMatchObject({
       itemArithmeticValid: true,
       subtotalChecked: true,
