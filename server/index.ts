@@ -66,8 +66,9 @@ if (process.env.NODE_ENV === 'production') {
 const server = app.listen(config.port, async () => {
   console.info(`[server] FastSplit listening on http://localhost:${config.port}`);
   try {
+    const modelStarted = performance.now();
     await engine.warmup();
-    console.info(`[ocr] ${config.languages} model loaded and ready`);
+    console.info(`[ocr] ${config.languages} model loaded once in ${Math.round(performance.now() - modelStarted)}ms and ready`);
   } catch (error) {
     console.error('[ocr] model warmup failed', error instanceof Error ? error.message : error);
   }

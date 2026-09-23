@@ -25,8 +25,11 @@ describe('OCR foundation', () => {
       id: `ocr_${index}`, text: 'line', confidence: 0.9,
       bbox: { x1: 0, y1: 0, x2: 1, y2: 1 }, centerX: 0.5, centerY: 0.5,
     })) };
-    expect(getSecondPassReason(reliable, false)).toBeNull();
-    expect(getSecondPassReason({ ...reliable, confidence: 0.5 }, false)).toBe('low_ocr_confidence');
-    expect(getSecondPassReason({ ...reliable, detections: [] }, false)).toBe('too_few_text_regions');
+    const clear = { lowContrast: false, underexposed: false, overexposed: false };
+    expect(getSecondPassReason(reliable, clear)).toBeNull();
+    expect(getSecondPassReason({ ...reliable, confidence: 0.5 }, clear)).toBe('very_low_ocr_confidence');
+    expect(getSecondPassReason({ ...reliable, confidence: 0.7 }, clear)).toBeNull();
+    expect(getSecondPassReason({ ...reliable, confidence: 0.7 }, { ...clear, lowContrast: true })).toBe('image_quality_and_ocr_confidence');
+    expect(getSecondPassReason({ ...reliable, detections: [] }, clear)).toBe('too_few_text_regions');
   });
 });

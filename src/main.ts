@@ -71,7 +71,7 @@ function renderResult(result: ReceiptOcrResponse): void {
   status.textContent = result.needsReview ? 'Review recommended' : 'Receipt read successfully';
   status.className = `status ${result.needsReview ? 'warning' : 'success'}`;
   summary.classList.remove('hidden');
-  summary.innerHTML = `<strong>${result.ocr.detections.length} text regions</strong><span>${Math.round(result.ocr.confidence * 100)}% confidence · Pass ${result.ocr.passUsed} · ${Math.round(result.timingsMs.total ?? 0)} ms</span>`;
+  summary.innerHTML = `<strong>${result.ocr.detections.length} text regions</strong><span>${Math.round(result.ocr.confidence * 100)}% confidence · Pass ${result.ocr.passUsed} · ${Math.round(result.timingsMs.total ?? 0)} ms${result.cacheHit ? ' · cached' : ''}</span>`;
   boxes.replaceChildren();
   detections.replaceChildren();
 

@@ -32,6 +32,7 @@ export type ReceiptOcrResponse = {
     detections: OcrDetection[];
   };
   timingsMs: Record<string, number>;
+  cacheHit: boolean;
   needsReview: boolean;
   message: string | null;
 };

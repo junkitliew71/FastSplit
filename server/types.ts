@@ -29,6 +29,7 @@ export type ReceiptOcrResponse = {
   quality: ImageQuality;
   ocr: OcrPass & { passUsed: 1 | 2; secondPassReason: string | null };
   timingsMs: Record<string, number>;
+  cacheHit: boolean;
   needsReview: boolean;
   message: string | null;
 };
