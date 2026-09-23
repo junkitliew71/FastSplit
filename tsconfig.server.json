@@ -11,5 +11,5 @@
     "outDir": ".tsbuild/server",
     "types": ["node"]
   },
-  "include": ["server", "tests", "src/review-model.ts", "src/auth-session.ts", "src/types.ts"]
+  "include": ["server", "tests", "src/review-model.ts", "src/auth-session.ts", "src/receipt-history-model.ts", "src/types.ts"]
 }

@@ -27,10 +27,16 @@ export const firebaseConfigured = requiredKeys.every((key) => typeof firebaseCon
 let authInstance: Auth | null = null;
 let persistenceReady: Promise<void> | null = null;
 
+export function getFirebaseApp(): FirebaseApp | null {
+  if (!firebaseConfigured) return null;
+  return getApps().length > 0 ? getApp() : initializeApp(firebaseConfig);
+}
+
 export function getFirebaseAuth(): Auth | null {
   if (!firebaseConfigured) return null;
   if (authInstance) return authInstance;
-  const app: FirebaseApp = getApps().length > 0 ? getApp() : initializeApp(firebaseConfig);
+  const app = getFirebaseApp();
+  if (!app) return null;
   authInstance = getAuth(app);
   persistenceReady ??= setPersistence(authInstance, browserLocalPersistence);
   return authInstance;

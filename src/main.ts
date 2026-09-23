@@ -15,6 +15,8 @@ import {
   signInWithGoogle,
 } from './firebase-auth.ts';
 import { prepareReceiptImage, type PreparedImage } from './image.ts';
+import { deleteReceiptHistory, getReceiptHistory, listReceiptHistory, saveReceiptHistory } from './firebase-history.ts';
+import { createHistoryRecord, type ReceiptHistoryRecord } from './receipt-history-model.ts';
 import {
   assignDetection,
   clearTarget,
@@ -47,11 +49,13 @@ app.innerHTML = `
   <header class="topbar">
     <a class="brand" href="/" aria-label="FastSplit home"><span>F</span> FastSplit</a>
     <div class="topbar-actions">
+      <button id="history-nav" class="history-nav hidden" type="button">History</button>
       <div class="lang" aria-label="Language"><button class="active">EN</button><button>中文</button></div>
       <div id="account-chip" class="account-chip hidden"><span id="account-avatar"></span><span id="account-name"></span><button id="logout-button" type="button">Log out</button></div>
     </div>
   </header>
   <main id="app-main" class="auth-hidden">
+    <div id="scan-view">
     <section class="hero">
       <p class="eyebrow">SMART RECEIPT SCANNER</p>
       <h1>Split the bill.<br><em>Keep the moment.</em></h1>
@@ -80,10 +84,21 @@ app.innerHTML = `
               <button id="clear-field" class="compact-button" disabled>Clear field</button>
             </div>
             <div id="review-fields"></div>
+            <button id="save-history" class="primary history-save hidden" type="button">Save to History</button>
+            <p id="save-message" class="save-message" aria-live="polite"></p>
           </section>
           <details id="raw-detections" class="raw-detections hidden"><summary>Detected OCR text</summary><ol id="detections" class="detections"></ol></details>
         </div>
       </div>
+    </section>
+    </div>
+    <section id="history-view" class="history-view hidden" aria-labelledby="history-title">
+      <button id="history-back" class="history-back" type="button">← Back to receipt</button>
+      <p class="eyebrow">YOUR SAVED RECEIPTS</p>
+      <h2 id="history-title">Receipt history</h2>
+      <p class="intro">Your receipts stay here until you choose to delete them.</p>
+      <div id="history-status" class="history-status" aria-live="polite"></div>
+      <div id="history-list" class="history-list"></div>
     </section>
   </main>
   <footer id="app-footer" class="auth-hidden">FastSplit · Built for fairer tables</footer>
@@ -99,6 +114,12 @@ const accountAvatar = document.querySelector<HTMLSpanElement>('#account-avatar')
 const accountName = document.querySelector<HTMLSpanElement>('#account-name')!;
 const appMain = document.querySelector<HTMLElement>('#app-main')!;
 const appFooter = document.querySelector<HTMLElement>('#app-footer')!;
+const scanView = document.querySelector<HTMLElement>('#scan-view')!;
+const historyView = document.querySelector<HTMLElement>('#history-view')!;
+const historyNav = document.querySelector<HTMLButtonElement>('#history-nav')!;
+const historyBack = document.querySelector<HTMLButtonElement>('#history-back')!;
+const historyStatus = document.querySelector<HTMLDivElement>('#history-status')!;
+const historyList = document.querySelector<HTMLDivElement>('#history-list')!;
 
 const input = document.querySelector<HTMLInputElement>('#receipt-input')!;
 const dropzone = document.querySelector<HTMLLabelElement>('#dropzone')!;
@@ -117,6 +138,8 @@ const editingBanner = document.querySelector<HTMLDivElement>('#editing-banner')!
 const undoButton = document.querySelector<HTMLButtonElement>('#undo-mapping')!;
 const clearButton = document.querySelector<HTMLButtonElement>('#clear-field')!;
 const rawDetections = document.querySelector<HTMLDetailsElement>('#raw-detections')!;
+const saveHistoryButton = document.querySelector<HTMLButtonElement>('#save-history')!;
+const saveMessage = document.querySelector<HTMLParagraphElement>('#save-message')!;
 
 let prepared: PreparedImage | null = null;
 let controller: AbortController | null = null;
@@ -125,6 +148,8 @@ let reviewModel: ReviewModel | null = null;
 let activeTarget: TargetKey | null = null;
 let mappingHistory: ReviewModel[] = [];
 let currentIdentity: AuthIdentity | null = null;
+let currentHistoryId: string | null = null;
+let currentHistoryImage: Pick<ReceiptHistoryRecord, 'receiptImagePath' | 'receiptImageUrl'> | undefined;
 
 function reset(): void {
   controller?.abort();
@@ -142,9 +167,12 @@ function reset(): void {
   reviewModel = null;
   activeTarget = null;
   mappingHistory = [];
+  currentHistoryId = null;
+  currentHistoryImage = undefined;
+  saveMessage.textContent = '';
 }
 
-function renderResult(result: ReceiptOcrResponse): void {
+function renderResult(result: ReceiptOcrResponse, restoredReview?: ReviewModel): void {
   status.textContent = result.needsReview ? 'Review recommended' : 'Receipt read successfully';
   status.className = `status ${result.needsReview ? 'warning' : 'success'}`;
   summary.classList.remove('hidden');
@@ -152,11 +180,12 @@ function renderResult(result: ReceiptOcrResponse): void {
   boxes.replaceChildren();
   detections.replaceChildren();
   currentResult = result;
-  reviewModel = createReviewModel(result);
+  reviewModel = restoredReview ? cloneReviewModel(restoredReview) : createReviewModel(result);
   activeTarget = null;
   mappingHistory = [];
   review.classList.remove('hidden');
   rawDetections.classList.remove('hidden');
+  saveHistoryButton.classList.toggle('hidden', currentIdentity?.mode !== 'authenticated');
 
   for (const item of result.ocr.detections) {
     const box = document.createElement('button');
@@ -223,6 +252,58 @@ function renderReview(): void {
   undoButton.disabled = mappingHistory.length === 0;
   clearButton.disabled = activeTarget === null;
   updateBoxStates();
+}
+
+async function showHistory(): Promise<void> {
+  if (currentIdentity?.mode !== 'authenticated') return;
+  scanView.classList.add('hidden');
+  historyView.classList.remove('hidden');
+  historyStatus.textContent = 'Loading your receipts…';
+  historyList.replaceChildren();
+  try {
+    const records = await listReceiptHistory(currentIdentity.uid);
+    historyStatus.textContent = records.length ? '' : 'No saved receipts yet.';
+    historyList.innerHTML = records.map((record) => `<article class="history-card" data-history-id="${escapeHtml(record.id)}">
+      <div><strong>${escapeHtml(record.restaurant)}</strong><span>${record.updatedAt ? record.updatedAt.toLocaleString() : 'Saved receipt'}</span></div>
+      <div class="history-amount">${formatMoney(record.grandTotalCents)}</div>
+      <button data-action="open" type="button">View receipt</button>
+      <button data-action="delete" class="danger-link" type="button">Delete</button>
+    </article>`).join('');
+  } catch (error) {
+    historyStatus.textContent = friendlyHistoryError(error);
+  }
+}
+
+async function openHistoryReceipt(id: string): Promise<void> {
+  if (currentIdentity?.mode !== 'authenticated') return;
+  historyStatus.textContent = 'Opening receipt…';
+  const record = await getReceiptHistory(currentIdentity.uid, id);
+  reset();
+  currentHistoryId = record.id;
+  currentHistoryImage = { receiptImagePath: record.receiptImagePath, receiptImageUrl: record.receiptImageUrl };
+  preview.src = record.receiptImageUrl;
+  dropzone.classList.add('hidden');
+  workspace.classList.remove('hidden');
+  scanView.classList.remove('hidden');
+  historyView.classList.add('hidden');
+  renderResult(record.ocrResult, record.ocrMappings);
+  saveMessage.textContent = 'Opened from History. Saving will update this receipt.';
+  review.scrollIntoView({ behavior: 'smooth', block: 'start' });
+}
+
+async function removeHistoryReceipt(id: string): Promise<void> {
+  if (currentIdentity?.mode !== 'authenticated') return;
+  const record = await getReceiptHistory(currentIdentity.uid, id);
+  if (!window.confirm(`Delete “${record.restaurant}” permanently?`)) return;
+  await deleteReceiptHistory(currentIdentity.uid, record);
+  if (currentHistoryId === id) reset();
+  await showHistory();
+}
+
+function friendlyHistoryError(error: unknown): string {
+  if (error instanceof Error && error.message.includes('index')) return 'History needs the Firestore index described in the setup instructions.';
+  if (error instanceof Error && error.message.includes('permission')) return 'History access was denied. Check the Firestore and Storage security rules.';
+  return error instanceof Error ? error.message : 'Could not load receipt history.';
 }
 
 function mappingField(label: string, target: TargetKey): string {
@@ -310,6 +391,47 @@ scanButton.addEventListener('click', async () => {
   }
 });
 
+saveHistoryButton.addEventListener('click', async () => {
+  if (currentIdentity?.mode !== 'authenticated' || !currentResult || !reviewModel) return;
+  saveHistoryButton.disabled = true;
+  saveMessage.textContent = currentHistoryId ? 'Updating receipt…' : 'Saving receipt and image…';
+  try {
+    const fullRecord = createHistoryRecord(currentIdentity.uid, currentResult, reviewModel, '', '');
+    const { receiptImagePath, receiptImageUrl, ...record } = fullRecord;
+    void receiptImagePath;
+    void receiptImageUrl;
+    currentHistoryId = await saveReceiptHistory(
+      currentIdentity.uid,
+      prepared?.blob ?? null,
+      record,
+      currentHistoryId,
+      currentHistoryImage,
+    );
+    if (!currentHistoryImage) {
+      const saved = await getReceiptHistory(currentIdentity.uid, currentHistoryId);
+      currentHistoryImage = { receiptImagePath: saved.receiptImagePath, receiptImageUrl: saved.receiptImageUrl };
+    }
+    saveMessage.textContent = 'Saved permanently to History.';
+  } catch (error) {
+    saveMessage.textContent = friendlyHistoryError(error);
+  } finally {
+    saveHistoryButton.disabled = false;
+  }
+});
+
+historyNav.addEventListener('click', () => void showHistory());
+historyBack.addEventListener('click', () => {
+  historyView.classList.add('hidden');
+  scanView.classList.remove('hidden');
+});
+historyList.addEventListener('click', (event) => {
+  const button = (event.target as HTMLElement).closest<HTMLButtonElement>('[data-action]');
+  const id = button?.closest<HTMLElement>('[data-history-id]')?.dataset.historyId;
+  if (!button || !id) return;
+  const operation = button.dataset.action === 'delete' ? removeHistoryReceipt(id) : openHistoryReceipt(id);
+  operation.catch((error) => { historyStatus.textContent = friendlyHistoryError(error); });
+});
+
 cancelButton.addEventListener('click', reset);
 
 review.addEventListener('click', (event) => {
@@ -366,6 +488,8 @@ function enterApplication(identity: AuthIdentity): void {
   accountName.textContent = identity.mode === 'guest' ? 'Guest Mode' : name;
   accountAvatar.textContent = name.trim().charAt(0).toUpperCase() || 'F';
   accountChip.dataset.mode = identity.mode;
+  historyNav.classList.toggle('hidden', identity.mode !== 'authenticated');
+  saveHistoryButton.classList.toggle('hidden', identity.mode !== 'authenticated' || !reviewModel);
 }
 
 function showAuthentication(): void {
@@ -374,6 +498,7 @@ function showAuthentication(): void {
   appMain.classList.add('auth-hidden');
   appFooter.classList.add('auth-hidden');
   accountChip.classList.add('hidden');
+  historyNav.classList.add('hidden');
   authMessage.textContent = firebaseConfigured
     ? ''
     : 'Google sign-in needs the Firebase web configuration. Guest Mode is ready.';

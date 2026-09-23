@@ -22,6 +22,7 @@ button, input { font: inherit; }
 .lang button { border: 0; border-radius: 99px; padding: 6px 10px; color: #56706d; background: transparent; font-size: 12px; }
 .lang .active { color: white; background: #0b3b36; }
 .topbar-actions { display: flex; align-items: center; gap: 10px; }
+.history-nav { border: 0; color: #0b6f5c; background: transparent; cursor: pointer; font-weight: 750; }
 .account-chip { display: flex; align-items: center; gap: 7px; padding: 4px 5px 4px 4px; border: 1px solid #d8d0c1; border-radius: 99px; background: #fffdf8; }
 .account-chip > span:first-child { display: grid; place-items: center; width: 29px; height: 29px; border-radius: 50%; color: #0b3b36; background: #e7eee2; font-size: 12px; font-weight: 800; }
 .account-chip #account-name { max-width: 130px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 12px; font-weight: 700; }
@@ -88,6 +89,20 @@ h1 em { color: #e35b35; font-weight: 400; }
 .totals-card { margin-top: 20px; background: #f8f5ee; }
 .raw-detections { margin-top: 18px; border-top: 1px solid #e4ddd1; padding-top: 12px; }
 .raw-detections summary { cursor: pointer; color: #607572; font-size: 12px; font-weight: 700; }
+.history-save { margin-top: 20px; }
+.save-message { min-height: 20px; color: #247557; font-size: 12px; text-align: center; }
+.history-view { min-height: calc(100vh - 150px); padding: clamp(44px,7vw,80px) 0; }
+.history-view h2 { margin: 8px 0 12px; font: 500 clamp(40px,6vw,64px)/1 Georgia, serif; letter-spacing: -.04em; }
+.history-back { margin-bottom: 44px; border: 0; color: #0b6f5c; background: transparent; cursor: pointer; }
+.history-status { min-height: 28px; margin-top: 30px; color: #71817f; }
+.history-list { display: grid; gap: 14px; }
+.history-card { display: grid; grid-template-columns: minmax(0,1fr) auto auto auto; align-items: center; gap: 18px; padding: 22px; border: 1px solid #ddd5c8; border-radius: 16px; background: #fffdf8; }
+.history-card > div:first-child { display: flex; min-width: 0; flex-direction: column; gap: 5px; }
+.history-card strong { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.history-card span { color: #71817f; font-size: 12px; }
+.history-card button { min-height: 40px; border: 1px solid #c9c2b6; border-radius: 8px; color: #0b6f5c; background: transparent; cursor: pointer; font-weight: 700; }
+.history-card .danger-link { color: #b54738; }
+.history-amount { font-weight: 800; }
 .detections { max-height: 420px; margin: 0; padding: 0; overflow: auto; list-style: none; }
 .detections li { display: flex; justify-content: space-between; gap: 12px; min-height: 42px; padding: 9px 0; border-bottom: 1px solid #eee7db; cursor: pointer; }
 .detections li.mapped { color: #247557; }
@@ -105,4 +120,5 @@ footer { padding: 26px; border-top: 1px solid #d8d0c1; color: #71817f; text-alig
   .topbar { height: auto; min-height: 72px; gap: 10px; padding-top: 10px; padding-bottom: 10px; }
   .topbar-actions { align-items: end; flex-direction: column-reverse; gap: 5px; }
   .account-chip #account-name { max-width: 78px; }
+  .history-card { grid-template-columns: 1fr auto; }
 }
