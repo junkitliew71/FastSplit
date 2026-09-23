@@ -78,6 +78,7 @@ app.innerHTML = `
       <div class="section-heading"><div><h2 id="scan-title">Scan your receipt</h2><p class="scanner-copy">Keep the whole receipt in frame, with readable prices.</p></div><span class="privacy">Processed privately</span></div>
       <label class="dropzone" id="dropzone">
         <input id="receipt-input" type="file" accept="image/*" capture="environment" />
+        <input id="upload-input" type="file" accept="image/*" />
         <span class="camera">⌁</span><strong>Take a photo or choose a receipt</strong>
         <small>JPG, PNG, WebP · large photos are resized before upload</small>
       </label>
@@ -211,6 +212,7 @@ const historyStatus = document.querySelector<HTMLDivElement>('#history-status')!
 const historyList = document.querySelector<HTMLDivElement>('#history-list')!;
 
 const input = document.querySelector<HTMLInputElement>('#receipt-input')!;
+const uploadInput = document.querySelector<HTMLInputElement>('#upload-input')!;
 const dropzone = document.querySelector<HTMLLabelElement>('#dropzone')!;
 const workspace = document.querySelector<HTMLDivElement>('#workspace')!;
 const preview = document.querySelector<HTMLImageElement>('#preview')!;
@@ -281,6 +283,7 @@ function reset(): void {
   if (prepared) URL.revokeObjectURL(prepared.previewUrl);
   prepared = null;
   input.value = '';
+  uploadInput.value = '';
   workspace.classList.add('hidden');
   dropzone.classList.remove('hidden');
   boxes.replaceChildren();
@@ -663,9 +666,7 @@ function escapeHtml(value: string): string {
   return element.innerHTML;
 }
 
-input.addEventListener('change', async () => {
-  const file = input.files?.[0];
-  if (!file) return;
+async function prepareSelectedReceipt(file: File): Promise<void> {
   beginFlow();
   status.textContent = 'Improving image…';
   try {
@@ -677,6 +678,15 @@ input.addEventListener('change', async () => {
   } catch (error) {
     status.textContent = error instanceof Error ? error.message : 'Could not prepare image.';
   }
+}
+
+input.addEventListener('change', () => {
+  const file = input.files?.[0];
+  if (file) void prepareSelectedReceipt(file);
+});
+uploadInput.addEventListener('change', () => {
+  const file = uploadInput.files?.[0];
+  if (file) void prepareSelectedReceipt(file);
 });
 
 scanButton.addEventListener('click', async () => {
@@ -728,7 +738,7 @@ saveHistoryButton.addEventListener('click', async () => {
 historyNav.addEventListener('click', () => void showHistory());
 splitNav.addEventListener('click', beginFlow);
 scanHero.addEventListener('click', () => { beginFlow(); input.click(); });
-uploadHero.addEventListener('click', () => { beginFlow(); input.click(); });
+uploadHero.addEventListener('click', () => { beginFlow(); uploadInput.click(); });
 manualHero.addEventListener('click', beginManualFlow);
 scannerBack.addEventListener('click', () => {
   if (currentStep > 1) goToStep(currentStep - 1);
