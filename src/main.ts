@@ -112,6 +112,21 @@ app.innerHTML = `
         <div id="people-list" class="people-list"></div>
         <button id="people-continue" class="primary" type="button" disabled>Continue to split →</button>
       </section>
+      <section id="manual-step" class="workflow-step hidden">
+        <p class="step">ENTER THE BILL</p><h2>Enter receipt manually</h2>
+        <p class="scanner-copy">Add each item exactly as it appears on the bill.</p>
+        <label class="manual-restaurant">Restaurant<input id="manual-restaurant" placeholder="Restaurant name"></label>
+        <div id="manual-items" class="manual-items"></div>
+        <button id="manual-add-item" class="secondary" type="button">＋ Add item</button>
+        <div class="manual-totals">
+          <label>Service charge<input id="manual-service" type="number" min="0" step="0.01" value="0.00"></label>
+          <label>SST / GST<input id="manual-tax" type="number" min="0" step="0.01" value="0.00"></label>
+          <label>Discount<input id="manual-discount" type="number" min="0" step="0.01" value="0.00"></label>
+          <label>Rounding<input id="manual-rounding" type="number" step="0.01" value="0.00"></label>
+        </div>
+        <div id="manual-calculated" class="manual-calculated"></div>
+        <button id="manual-continue" class="primary" type="button">Confirm receipt →</button>
+      </section>
       <section id="split-step" class="workflow-step hidden">
         <p class="step">WHO HAD WHAT?</p><h2>Split the items</h2>
         <p class="scanner-copy">Select one or more people for every item. Shared items are divided equally.</p>
@@ -163,6 +178,7 @@ const hero = document.querySelector<HTMLElement>('.hero')!;
 const wizard = document.querySelector<HTMLElement>('#wizard')!;
 const receiptStep = document.querySelector<HTMLElement>('#receipt-step')!;
 const peopleStep = document.querySelector<HTMLElement>('#people-step')!;
+const manualStep = document.querySelector<HTMLElement>('#manual-step')!;
 const splitStep = document.querySelector<HTMLElement>('#split-step')!;
 const finalStep = document.querySelector<HTMLElement>('#final-step')!;
 const confirmReviewButton = document.querySelector<HTMLButtonElement>('#confirm-review')!;
@@ -177,6 +193,15 @@ const finalTotal = document.querySelector<HTMLDivElement>('#final-total')!;
 const personTotals = document.querySelector<HTMLDivElement>('#person-totals')!;
 const allocationCheck = document.querySelector<HTMLDivElement>('#allocation-check')!;
 const startOver = document.querySelector<HTMLButtonElement>('#start-over')!;
+const manualRestaurant = document.querySelector<HTMLInputElement>('#manual-restaurant')!;
+const manualItems = document.querySelector<HTMLDivElement>('#manual-items')!;
+const manualAddItem = document.querySelector<HTMLButtonElement>('#manual-add-item')!;
+const manualService = document.querySelector<HTMLInputElement>('#manual-service')!;
+const manualTax = document.querySelector<HTMLInputElement>('#manual-tax')!;
+const manualDiscount = document.querySelector<HTMLInputElement>('#manual-discount')!;
+const manualRounding = document.querySelector<HTMLInputElement>('#manual-rounding')!;
+const manualCalculated = document.querySelector<HTMLDivElement>('#manual-calculated')!;
+const manualContinue = document.querySelector<HTMLButtonElement>('#manual-continue')!;
 const historyBack = document.querySelector<HTMLButtonElement>('#history-back')!;
 const historyStatus = document.querySelector<HTMLDivElement>('#history-status')!;
 const historyList = document.querySelector<HTMLDivElement>('#history-list')!;
@@ -214,6 +239,7 @@ type Person = { id: string; name: string };
 let people: Person[] = [];
 let assignments = new Map<string, Set<string>>();
 let currentStep = 1;
+let manualMode = false;
 
 function beginFlow(): void {
   hero.classList.add('hidden');
@@ -228,6 +254,8 @@ function goToStep(step: number): void {
   peopleStep.classList.toggle('hidden', step !== 3);
   splitStep.classList.toggle('hidden', step !== 4);
   finalStep.classList.toggle('hidden', step !== 5);
+  manualStep.classList.toggle('hidden', !manualMode || step !== 2);
+  if (manualMode && step === 2) receiptStep.classList.add('hidden');
   scannerSection.dataset.step = String(step);
   for (const button of wizard.querySelectorAll<HTMLButtonElement>('[data-step]')) {
     const buttonStep = Number(button.dataset.step);
@@ -235,6 +263,13 @@ function goToStep(step: number): void {
     button.classList.toggle('complete', buttonStep < step);
   }
   window.scrollTo({ top: 0, behavior: 'smooth' });
+}
+
+function beginManualFlow(): void {
+  beginFlow();
+  manualMode = true;
+  addManualItem();
+  goToStep(2);
 }
 
 function reset(): void {
@@ -258,6 +293,13 @@ function reset(): void {
   saveMessage.textContent = '';
   people = [];
   assignments = new Map();
+  manualMode = false;
+  manualItems.replaceChildren();
+  manualRestaurant.value = '';
+  manualService.value = '0.00';
+  manualTax.value = '0.00';
+  manualDiscount.value = '0.00';
+  manualRounding.value = '0.00';
   renderPeople();
   goToStep(1);
 }
@@ -437,6 +479,79 @@ function updateBoxStates(): void {
   }
 }
 
+function addManualItem(): void {
+  const id = crypto.randomUUID();
+  const row = document.createElement('article');
+  row.className = 'manual-item';
+  row.dataset.manualItemId = id;
+  row.innerHTML = `<label class="manual-name">Food name<input data-field="name" placeholder="e.g. Chicken rice"></label>
+    <label>Quantity<input data-field="quantity" type="number" min="0.01" step="any" value="1"></label>
+    <label>Unit price<input data-field="unitPrice" type="number" min="0" step="0.01" placeholder="0.00"></label>
+    <label>Total<input data-field="total" type="number" min="0" step="0.01" placeholder="0.00"></label>
+    <button type="button" data-remove-manual aria-label="Delete item">Delete</button>`;
+  manualItems.append(row);
+  updateManualTotal();
+}
+
+function moneyInputCents(input: HTMLInputElement): number {
+  const value = Number(input.value);
+  return Number.isFinite(value) ? Math.round(value * 100) : 0;
+}
+
+function updateManualTotal(): void {
+  const itemSubtotal = [...manualItems.querySelectorAll<HTMLElement>('[data-manual-item-id]')].reduce((sum, row) => {
+    const quantity = Number(row.querySelector<HTMLInputElement>('[data-field="quantity"]')?.value ?? 0);
+    const unit = moneyInputCents(row.querySelector<HTMLInputElement>('[data-field="unitPrice"]')!);
+    const totalInput = row.querySelector<HTMLInputElement>('[data-field="total"]')!;
+    const total = totalInput.value === '' ? Math.round(quantity * unit) : moneyInputCents(totalInput);
+    return sum + total;
+  }, 0);
+  const grand = itemSubtotal + moneyInputCents(manualService) + moneyInputCents(manualTax)
+    - moneyInputCents(manualDiscount) + moneyInputCents(manualRounding);
+  manualCalculated.innerHTML = `<span>Calculated bill total</span><strong>${formatMoney(grand)}</strong>`;
+}
+
+function confirmManualReceipt(): void {
+  const rows = [...manualItems.querySelectorAll<HTMLElement>('[data-manual-item-id]')];
+  const items = rows.map((row, index) => {
+    const name = row.querySelector<HTMLInputElement>('[data-field="name"]')?.value.trim() ?? '';
+    const quantity = Number(row.querySelector<HTMLInputElement>('[data-field="quantity"]')?.value ?? 0);
+    const unitPriceCents = moneyInputCents(row.querySelector<HTMLInputElement>('[data-field="unitPrice"]')!);
+    const totalInput = row.querySelector<HTMLInputElement>('[data-field="total"]')!;
+    const totalCents = totalInput.value === '' ? Math.round(quantity * unitPriceCents) : moneyInputCents(totalInput);
+    return {
+      id: row.dataset.manualItemId ?? `manual_${index + 1}`,
+      name,
+      quantity,
+      unitPriceCents,
+      totalCents,
+      mappings: { foodName: { ocrIds: [] }, quantity: { ocrIds: [] }, unitPrice: { ocrIds: [] }, total: { ocrIds: [] } },
+      validation: { checked: true, valid: Math.abs(quantity * unitPriceCents - totalCents) <= 1, differenceCents: quantity * unitPriceCents - totalCents },
+    };
+  }).filter((item) => item.name && item.quantity > 0);
+  if (!items.length) { manualCalculated.textContent = 'Add at least one item with a name and quantity.'; return; }
+  const subtotal = items.reduce((sum, item) => sum + item.totalCents, 0);
+  const service = moneyInputCents(manualService);
+  const tax = moneyInputCents(manualTax);
+  const discount = moneyInputCents(manualDiscount);
+  const rounding = moneyInputCents(manualRounding);
+  const grand = subtotal + service + tax - discount + rounding;
+  reviewModel = {
+    items,
+    summary: {
+      subtotal: { valueCents: subtotal, mapping: { ocrIds: [] } },
+      serviceCharge: { valueCents: service, mapping: { ocrIds: [] } },
+      tax: { valueCents: tax, mapping: { ocrIds: [] } },
+      discount: { valueCents: discount, mapping: { ocrIds: [] } },
+      rounding: { valueCents: rounding, mapping: { ocrIds: [] } },
+      grandTotal: { valueCents: grand, mapping: { ocrIds: [] } },
+    },
+    validation: { itemArithmeticValid: items.every((item) => item.validation.valid), subtotalValid: true, grandTotalValid: true, needsReview: items.some((item) => !item.validation.valid) },
+  };
+  currentResult = { parsed: { restaurantName: { value: manualRestaurant.value.trim() || 'Manual receipt' } } } as ReceiptOcrResponse;
+  goToStep(3);
+}
+
 function renderPeople(): void {
   peopleList.innerHTML = people.map((person, index) => `<div class="person-row" data-person-id="${person.id}"><span>${String(index + 1).padStart(2, '0')}</span><strong>${escapeHtml(person.name)}</strong><button type="button" aria-label="Remove ${escapeHtml(person.name)}">Remove</button></div>`).join('');
   peopleContinue.disabled = people.length === 0;
@@ -572,7 +687,7 @@ historyNav.addEventListener('click', () => void showHistory());
 splitNav.addEventListener('click', beginFlow);
 scanHero.addEventListener('click', () => { beginFlow(); input.click(); });
 uploadHero.addEventListener('click', () => { beginFlow(); input.click(); });
-manualHero.addEventListener('click', beginFlow);
+manualHero.addEventListener('click', beginManualFlow);
 scannerBack.addEventListener('click', () => {
   if (currentStep > 1) goToStep(currentStep - 1);
   else { scannerSection.classList.add('hidden'); hero.classList.remove('hidden'); window.scrollTo({ top: 0, behavior: 'smooth' }); }
@@ -629,6 +744,17 @@ wizard.addEventListener('click', (event) => {
   const target = Number(button?.dataset.step ?? 0);
   if (target > 0 && target < currentStep) goToStep(target);
 });
+manualAddItem.addEventListener('click', addManualItem);
+manualItems.addEventListener('click', (event) => {
+  const button = (event.target as HTMLElement).closest('[data-remove-manual]');
+  if (!button) return;
+  button.closest('[data-manual-item-id]')?.remove();
+  if (!manualItems.children.length) addManualItem();
+  updateManualTotal();
+});
+manualItems.addEventListener('input', updateManualTotal);
+for (const inputElement of [manualService, manualTax, manualDiscount, manualRounding]) inputElement.addEventListener('input', updateManualTotal);
+manualContinue.addEventListener('click', confirmManualReceipt);
 
 cancelButton.addEventListener('click', reset);
 

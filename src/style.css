@@ -122,6 +122,15 @@ h1 em { color: #08785f; font-style: normal; font-weight: 800; }
 .history-card .danger-link { color: #b54738; }
 .history-amount { font-weight: 800; }
 .people-form { display: flex; gap: 10px; margin: 28px 0 18px; }
+.manual-restaurant { display: flex; max-width: 560px; flex-direction: column; gap: 7px; margin: 28px 0 18px; color: #60736d; font-size: 12px; font-weight: 700; }
+.manual-restaurant input,.manual-item input,.manual-totals input { min-height: 48px; padding: 0 13px; border: 1px solid #d7ddd8; border-radius: 9px; background: white; }
+.manual-items { display: grid; gap: 12px; }
+.manual-item { display: grid; grid-template-columns: minmax(180px,2fr) repeat(3,minmax(100px,1fr)) auto; align-items: end; gap: 10px; padding: 16px; border: 1px solid #e0e5e1; border-radius: 13px; background: white; }
+.manual-item label,.manual-totals label { display: flex; min-width: 0; flex-direction: column; gap: 6px; color: #60736d; font-size: 11px; font-weight: 700; }
+.manual-item button { min-height: 48px; border: 0; color: #b54738; background: transparent; cursor: pointer; }
+.manual-totals { display: grid; grid-template-columns: repeat(4,1fr); gap: 10px; margin: 22px 0 14px; }
+.manual-calculated { display: flex; align-items: center; justify-content: space-between; margin-bottom: 12px; padding: 18px; border-radius: 12px; background: #eaf3e9; }
+.manual-calculated strong { color: #08785f; font-size: 20px; }
 .people-form input { min-height: 50px; flex: 1; padding: 0 15px; border: 1px solid #d7ddd8; border-radius: 9px; background: white; }
 .people-form button { padding: 0 20px; border: 0; border-radius: 9px; color: white; background: #08785f; cursor: pointer; font-weight: 750; }
 .people-list { display: grid; gap: 10px; margin-bottom: 24px; }
@@ -171,4 +180,7 @@ footer strong { color: #547268; font-size: 24px; }
   .wizard button { justify-content: center; font-size: 0; }
   .wizard button span { font-size: 11px; }
   .assignment-card { grid-template-columns: 1fr; }
+  .manual-item { grid-template-columns: repeat(2,1fr); }
+  .manual-name { grid-column: 1 / -1; }
+  .manual-totals { grid-template-columns: repeat(2,1fr); }
 }
