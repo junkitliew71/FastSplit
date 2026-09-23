@@ -17,6 +17,8 @@ The frontend runs at `http://localhost:5173`; the OCR API runs at `http://localh
 
 The Tesseract worker is loaded once during server startup and reused. A lightweight first pass runs on every request. An enhanced grayscale/normalized/sharpened second pass runs only when the first pass has low confidence, too few text regions, or marginal confidence on a low-contrast image.
 
+The enhanced pass also adopts the document-CV principles demonstrated by [`ties2/receipt-ocr-parser`](https://github.com/ties2/receipt-ocr-parser): receipt-focused cropping for high-contrast background photos, grayscale edge-preserving denoise, local adaptive contrast, layout-aware OCR, visual bounding boxes, and priority-based total extraction. FastSplit keeps its existing coordinate-aware item parser and Tesseract.js runtime so the Node deployment remains self-contained; the reference project's Python/PaddleOCR runtime is not copied into frontend code.
+
 ## Commands
 
 - `pnpm dev` — frontend and OCR server in watch mode

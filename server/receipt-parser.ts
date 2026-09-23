@@ -268,8 +268,12 @@ function parseCharges(rows: LayoutRow[]): ParsedReceipt['charges'] {
 function findGrandTotal(rows: LayoutRow[]): { value: number; detections: OcrDetection[] } | null {
   const candidates = rows.filter((row) => SUMMARY_PATTERNS.grandTotal.test(row.text)
     && !SUMMARY_PATTERNS.subtotal.test(row.text)
-    && !SUMMARY_PATTERNS.service.test(row.text));
-  const row = candidates[candidates.length - 1];
+    && !SUMMARY_PATTERNS.service.test(row.text)
+    && !/\b(?:cash|change|tendered|received|balance)\b/i.test(row.text));
+  // Follow the reference parser's two-tier keyword strategy: explicit payable
+  // totals beat a generic "total", which often appears in tax summaries.
+  const priority = candidates.filter((row) => /\b(?:grand\s*total|amount\s*due|total\s*due|net\s*total|total\s*\(?inclusive)\b/i.test(row.text));
+  const row = priority[priority.length - 1] ?? candidates[candidates.length - 1];
   return row ? amountFromRow(row, false) : null;
 }
 

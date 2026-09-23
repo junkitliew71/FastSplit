@@ -70,6 +70,8 @@ async function enhancedPass(input: Buffer, quality: ImageQuality, width: number,
   const passHeight = backgroundPhoto ? Math.round(height * 0.82) : height;
   let pipeline = sharp(input);
   if (backgroundPhoto) pipeline = pipeline.extract({ left: offsetX, top: offsetY, width: passWidth, height: passHeight });
+  // Adapt the reference pipeline's light denoise + local contrast approach to
+  // Tesseract: keep gradients on clear receipts and only enhance noisy paper.
   pipeline = pipeline.greyscale();
   if (quality.lowContrast || quality.underexposed || quality.overexposed) {
     pipeline = pipeline.clahe({ width: 8, height: 8, maxSlope: 3 }).normalize({ lower: 2, upper: 98 });
