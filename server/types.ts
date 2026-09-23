@@ -31,6 +31,44 @@ export type LayoutRow = {
   confidence: number;
   detectionIds: string[];
   detections: OcrDetection[];
+  medianHeight?: number;
+  slope?: number;
+  horizontalGaps?: number[];
+  multilineCandidate?: boolean;
+};
+
+export type ReceiptRegionKind =
+  | 'MERCHANT'
+  | 'METADATA'
+  | 'ITEM_HEADER'
+  | 'ITEMS'
+  | 'SUMMARY'
+  | 'PAYMENT'
+  | 'FOOTER'
+  | 'UNKNOWN';
+
+export type RowRegionAssignment = {
+  rowId: string;
+  kind: ReceiptRegionKind;
+  confidence: number;
+  evidence: string[];
+};
+
+export type ReceiptRegion = {
+  id: string;
+  kind: ReceiptRegionKind;
+  confidence: number;
+  rowIds: string[];
+  startY: number;
+  endY: number;
+  evidence: string[];
+};
+
+export type ReceiptRegionDetection = {
+  assignments: RowRegionAssignment[];
+  regions: ReceiptRegion[];
+  itemHeaderRowId: string | null;
+  summaryBoundaryRowId: string | null;
 };
 
 export type ReceiptColumn = {
