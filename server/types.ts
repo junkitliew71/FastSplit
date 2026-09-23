@@ -23,11 +23,78 @@ export type OcrPass = {
   detections: OcrDetection[];
 };
 
+export type LayoutRow = {
+  id: string;
+  text: string;
+  centerY: number;
+  bbox: BoundingBox;
+  confidence: number;
+  detectionIds: string[];
+  detections: OcrDetection[];
+};
+
+export type ReceiptColumn = {
+  kind: 'description' | 'quantity' | 'unitPrice' | 'total' | 'numeric';
+  centerX: number;
+  confidence: number;
+};
+
+export type FieldMapping = { ocrIds: string[] };
+
+export type ParsedItem = {
+  id: string;
+  name: string;
+  quantity: number | null;
+  unitPriceCents: number | null;
+  totalCents: number | null;
+  confidence: number;
+  needsReview: boolean;
+  validation: { checked: boolean; valid: boolean | null; differenceCents: number | null };
+  mappings: {
+    name: FieldMapping;
+    quantity: FieldMapping;
+    unitPrice: FieldMapping;
+    total: FieldMapping;
+  };
+};
+
+export type ParsedReceipt = {
+  restaurantName: { value: string | null; confidence: number; mapping: FieldMapping };
+  items: ParsedItem[];
+  charges: {
+    serviceChargeCents: number;
+    taxCents: number;
+    discountCents: number;
+    roundingCents: number;
+    otherCents: number;
+    mappings: Record<string, FieldMapping>;
+  };
+  totals: {
+    itemSumCents: number;
+    subtotalCents: number | null;
+    grandTotalCents: number | null;
+  };
+  validation: {
+    itemArithmeticValid: boolean;
+    subtotalChecked: boolean;
+    subtotalValid: boolean | null;
+    subtotalDifferenceCents: number | null;
+    grandTotalChecked: boolean;
+    grandTotalValid: boolean | null;
+    expectedGrandTotalCents: number | null;
+    grandTotalDifferenceCents: number | null;
+  };
+  confidence: number;
+  needsReview: boolean;
+  layout: { rows: LayoutRow[]; columns: ReceiptColumn[] };
+};
+
 export type ReceiptOcrResponse = {
   requestId: string;
   image: { width: number; height: number; format: string | null };
   quality: ImageQuality;
   ocr: OcrPass & { passUsed: 1 | 2; secondPassReason: string | null };
+  parsed: ParsedReceipt;
   timingsMs: Record<string, number>;
   cacheHit: boolean;
   needsReview: boolean;

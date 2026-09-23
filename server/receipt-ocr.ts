@@ -1,6 +1,7 @@
 import { createHash, randomUUID } from 'node:crypto';
 import type { OcrEngine } from './ocr-engine.js';
 import { preprocessImage } from './preprocess.js';
+import { parseReceipt } from './receipt-parser.js';
 import { StageTimer } from './timing.js';
 import type { OcrPass, ReceiptOcrResponse } from './types.js';
 
@@ -47,15 +48,17 @@ export async function processReceipt(input: Buffer, engine: OcrEngine): Promise<
   }
 
   const needsReview = selected.confidence < MIN_CONFIDENCE || selected.detections.length < MIN_WORDS;
+  const parsed = await timer.measure('layoutParserValidation', async () => parseReceipt(selected.detections));
   const timingsMs = timer.finish();
   const response: ReceiptOcrResponse = {
     requestId,
     image: { width: prepared.width, height: prepared.height, format: prepared.format },
     quality: prepared.quality,
     ocr: { ...selected, passUsed, secondPassReason },
+    parsed,
     timingsMs,
     cacheHit: false,
-    needsReview,
+    needsReview: needsReview || parsed.needsReview,
     message: needsReview ? 'Could not read this receipt clearly. Please retake the photo or enter the bill manually.' : null,
   };
   remember(cacheKey, response);

@@ -31,6 +31,35 @@ export type ReceiptOcrResponse = {
     text: string;
     detections: OcrDetection[];
   };
+  parsed: {
+    restaurantName: { value: string | null; confidence: number; mapping: { ocrIds: string[] } };
+    items: Array<{
+      id: string;
+      name: string;
+      quantity: number | null;
+      unitPriceCents: number | null;
+      totalCents: number | null;
+      confidence: number;
+      needsReview: boolean;
+    }>;
+    charges: {
+      serviceChargeCents: number;
+      taxCents: number;
+      discountCents: number;
+      roundingCents: number;
+      otherCents: number;
+    };
+    totals: { itemSumCents: number; subtotalCents: number | null; grandTotalCents: number | null };
+    validation: {
+      itemArithmeticValid: boolean;
+      subtotalChecked: boolean;
+      subtotalValid: boolean | null;
+      grandTotalChecked: boolean;
+      grandTotalValid: boolean | null;
+    };
+    confidence: number;
+    needsReview: boolean;
+  };
   timingsMs: Record<string, number>;
   cacheHit: boolean;
   needsReview: boolean;
