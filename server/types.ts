@@ -186,6 +186,7 @@ export type ParsedReceipt = {
   confidence: number;
   needsReview: boolean;
   layout: { rows: LayoutRow[]; columns: ReceiptColumn[] };
+  understanding: SemanticClassification;
 };
 
 export type ReceiptOcrResponse = {

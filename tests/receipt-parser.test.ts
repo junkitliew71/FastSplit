@@ -117,4 +117,37 @@ describe('receipt layout and parser', () => {
     expect(parseMoneyCents('(0.05)')).toBe(-5);
     expect(parseQuantity('1,200')).toBe(1200);
   });
+
+  it('uses semantic receipt evidence while rejecting noisy top rows as the merchant name', () => {
+    detectionNumber = 0;
+    const parsed = parseReceipt([
+      word(':', 0.35, 0.02, 0.35), word('rom', 0.39, 0.02, 0.35),
+      word('RESTORAN', 0.28, 0.08), word('AL', 0.46, 0.08), word('RIZWATH', 0.52, 0.08),
+      word('12', 0.18, 0.12), word('JALAN', 0.25, 0.12), word('DESA', 0.38, 0.12),
+      word('QTY', 0.08, 0.20), word('DESCRIPTION', 0.22, 0.20), word('TOTAL', 0.84, 0.20),
+      word('1', 0.08, 0.28), word('Teh', 0.22, 0.28), word('Ais', 0.30, 0.28), word('3.00', 0.85, 0.28),
+      word('Sub', 0.55, 0.40), word('Total', 0.64, 0.40), word('3.00', 0.85, 0.40),
+      word('Servlce', 0.49, 0.46), word('Chg', 0.65, 0.46), word('0.30', 0.85, 0.46),
+      word('Grand', 0.50, 0.52), word('Total', 0.64, 0.52), word('3.30', 0.85, 0.52),
+    ]);
+    expect(parsed.restaurantName.value).toBe('RESTORAN AL RIZWATH');
+    expect(parsed.charges.serviceChargeCents).toBe(30);
+    expect(parsed.understanding.lines.find((line) => line.text.includes('Servlce'))?.primaryLabel).toBe('SERVICE_CHARGE');
+  });
+
+  it('associates description-only rows with following amount-only rows and stops at TOTAL AMOUNT', () => {
+    detectionNumber = 0;
+    const parsed = parseReceipt([
+      word('CAFE', 0.40, 0.05),
+      word('DESCRIPTION', 0.10, 0.15), word('TOTAL', 0.84, 0.15),
+      word('Coffee', 0.10, 0.24),
+      word('5.00', 0.84, 0.27),
+      word('Cake', 0.10, 0.32),
+      word('8.00', 0.84, 0.35),
+      word('TOTAL', 0.55, 0.44), word('AMOUNT', 0.66, 0.44), word('13.00', 0.84, 0.44),
+    ]);
+    expect(parsed.items.map((item) => item.name)).toEqual(['Coffee', 'Cake']);
+    expect(parsed.items.map((item) => item.totalCents)).toEqual([500, 800]);
+    expect(parsed.totals.grandTotalCents).toBe(1300);
+  });
 });

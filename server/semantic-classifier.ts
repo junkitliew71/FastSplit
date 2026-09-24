@@ -13,13 +13,15 @@ import type {
 export type SemanticLineContext = {
   region: ReceiptRegionKind;
   regionConfidence: number;
+  previousRegion?: ReceiptRegionKind;
+  nextRegion?: ReceiptRegionKind;
   previousRow?: LayoutRow;
   nextRow?: LayoutRow;
 };
 
 const ADDRESS_PATTERN = /\b(?:JALAN|JLN|ROAD|RD|STREET|LOT|TAMAN|BANDAR|SELANGOR|KUALA LUMPUR|PENANG|JOHOR|MALAYSIA|NEGERI SEMBILAN|SARAWAK|SABAH)\b/i;
-const WEBSITE_PATTERN = /(?:https?:\/\/)?(?:www\.)?[a-z0-9-]+(?:\.[a-z0-9-]+)+\b/i;
-const PHONE_PATTERN = /(?:\+?6?0?1\d[-\s]?\d{3,4}[-\s]?\d{4}|0\d[-\s]?\d{6,8})/;
+const WEBSITE_PATTERN = /(?:https?:\/\/)?(?:www\.)?[a-z0-9-]+(?:\.[a-z0-9-]+)*\.[a-z]{2,}\b/i;
+const PHONE_PATTERN = /(?:\+?6?0?\d{1,2}[-\s]?\d{3,4}[-\s]?\d{4}|0\d[-\s]?\d{6,8})/;
 
 export function classifyReceiptLayout(layout: { rows: LayoutRow[] }, regions: ReceiptRegionDetection): SemanticClassification {
   const assignmentByRow = new Map(regions.assignments.map((assignment) => [assignment.rowId, assignment]));
@@ -29,6 +31,8 @@ export function classifyReceiptLayout(layout: { rows: LayoutRow[] }, regions: Re
       return classifyLine(row, {
         region: assignment?.kind ?? 'UNKNOWN',
         regionConfidence: assignment?.confidence ?? 0,
+        previousRegion: assignmentByRow.get(layout.rows[index - 1]?.id ?? '')?.kind,
+        nextRegion: assignmentByRow.get(layout.rows[index + 1]?.id ?? '')?.kind,
         previousRow: layout.rows[index - 1],
         nextRow: layout.rows[index + 1],
       });
@@ -53,6 +57,17 @@ export function classifyLine(row: LayoutRow, context: SemanticLineContext): Clas
   if (context.region === 'PAYMENT') return classifyPayment(row, context, base, normalized);
 
   const keyword = matchReceiptKeyword(row.text);
+  const summaryCategory = keyword && ['SUBTOTAL', 'SERVICE_CHARGE', 'TAX', 'SST', 'GRAND_TOTAL', 'DISCOUNT', 'ROUNDING'].includes(keyword.category);
+  const summaryNeighbor = context.previousRegion === 'SUMMARY' || context.nextRegion === 'SUMMARY';
+  if (context.region === 'UNKNOWN' && summaryCategory && summaryNeighbor && rightmostMoney(row)) {
+    const inferred = classifySummary(row, { ...context, region: 'SUMMARY' }, base);
+    return {
+      ...inferred,
+      semanticConfidence: Math.min(inferred.semanticConfidence, keyword?.exact ? 0.82 : 0.78),
+      evidence: [...inferred.evidence.filter((item) => item !== 'SUMMARY region'), 'neighboring SUMMARY structure'],
+      warnings: [...inferred.warnings, 'region inferred from neighboring summary lines'],
+    };
+  }
   if (keyword?.exact) {
     return unknown(base, [`keyword ${keyword.keyword} found outside expected region`], ['region does not support semantic label']);
   }

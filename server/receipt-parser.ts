@@ -1,5 +1,7 @@
 import { approximatelyEqual, parseMoneyCents, parseQuantity } from './money.js';
 import { reconstructLayout } from './layout.js';
+import { detectReceiptRegions } from './receipt-regions.js';
+import { classifyReceiptLayout } from './semantic-classifier.js';
 import type {
   FieldMapping,
   LayoutRow,
@@ -7,6 +9,8 @@ import type {
   ParsedItem,
   ParsedReceipt,
   ReceiptColumn,
+  ReceiptSemanticLabel,
+  SemanticClassification,
 } from './types.js';
 
 const SUMMARY_PATTERNS = {
@@ -15,7 +19,7 @@ const SUMMARY_PATTERNS = {
   tax: /\b(?:sst|gst(?:\s*payable)?|service\s*tax|tax)\b/i,
   discount: /\b(?:discount|voucher|rebate|promo)\b/i,
   rounding: /\b(?:rounding|round\s*(?:adj|adjustment)?)\b/i,
-  grandTotal: /\b(?:grand\s*total|amount\s*due|total\s*due|net\s*total|total\s*\(?inclusive\s*(?:of\s*)?(?:sst|gst))\b|^\s*total\b/i,
+  grandTotal: /\b(?:grand\s*total|amount\s*due|total\s*due|total\s*amount|net\s*total|total\s*\(?inclusive\s*(?:of\s*)?(?:sst|gst))\b|^\s*total\b/i,
 };
 
 const NON_ITEM_PATTERN = /\b(?:receipt|invoice|cashier|table|date|time|tel|phone|address|cash|change|payment|thank|welcome|tax invoice)\b/i;
@@ -30,17 +34,36 @@ type NumericToken = {
 
 export function parseReceipt(detections: OcrDetection[]): ParsedReceipt {
   const layout = reconstructLayout(detections);
-  const summaryStart = layout.rows.findIndex(isSummaryRow);
+  const regions = detectReceiptRegions(layout);
+  const understanding = classifyReceiptLayout(layout, regions);
+  const strongSummaryIndex = regions.summaryBoundaryRowId
+    ? layout.rows.findIndex((row) => row.id === regions.summaryBoundaryRowId)
+    : -1;
+  const summaryStart = strongSummaryIndex >= 0 ? strongSummaryIndex : layout.rows.findIndex(isSummaryRow);
   const itemBoundary = summaryStart >= 0 ? summaryStart : layout.rows.length;
   const rowsBeforeSummary = layout.rows.slice(0, itemBoundary);
   const headerIndex = rowsBeforeSummary.findIndex(isHeaderRow);
-  const itemRows = associateWrappedItemRows(headerIndex >= 0 ? rowsBeforeSummary.slice(headerIndex + 1) : rowsBeforeSummary);
-  const items = itemRows.map((row, index) => parseItemRow(row, layout.columns, index + 1))
+  const legacyItemRows = associateWrappedItemRows(headerIndex >= 0 ? rowsBeforeSummary.slice(headerIndex + 1) : rowsBeforeSummary);
+  const regionKinds = new Map(regions.assignments.map((assignment) => [assignment.rowId, assignment.kind]));
+  const semanticItemRows = associateWrappedItemRows(rowsBeforeSummary.filter((row) => regionKinds.get(row.id) === 'ITEMS'));
+  const legacyItems = legacyItemRows.map((row, index) => parseItemRow(row, layout.columns, index + 1))
     .filter((item): item is ParsedItem => item !== null);
-  const summaryRows = layout.rows.filter(isSummaryRow);
-  const charges = parseCharges(summaryRows);
-  const subtotal = findSummaryAmount(summaryRows, SUMMARY_PATTERNS.subtotal);
-  const grandTotal = findGrandTotal(summaryRows);
+  const semanticItems = semanticItemRows.map((row, index) => parseItemRow(row, layout.columns, index + 1))
+    .filter((item): item is ParsedItem => item !== null);
+  const hasStrongItemHeader = regions.itemHeaderRowId !== null;
+  const items = hasStrongItemHeader && semanticItems.length > 0
+    ? semanticItems
+    : semanticItems.length > 0 && itemSetScore(semanticItems) >= itemSetScore(legacyItems)
+      ? semanticItems : legacyItems;
+  const summaryRows = uniqueRows([
+    ...layout.rows.filter((row) => regionKinds.get(row.id) === 'SUMMARY'),
+    ...layout.rows.filter(isSummaryRow),
+  ]);
+  const charges = parseCharges(summaryRows, understanding, layout.rows);
+  const subtotal = findSemanticAmount(layout.rows, understanding, ['SUBTOTAL'])
+    ?? findSummaryAmount(summaryRows, SUMMARY_PATTERNS.subtotal);
+  const grandTotal = findSemanticAmount(layout.rows, understanding, ['GRAND_TOTAL'])
+    ?? findGrandTotal(summaryRows);
   const itemSumCents = items.reduce((sum, item) => sum + (item.totalCents ?? 0), 0);
   const itemArithmeticValid = items.every((item) => item.validation.valid !== false);
   const subtotalChecked = subtotal !== null && items.length > 0 && items.every((item) => item.totalCents !== null);
@@ -52,7 +75,7 @@ export function parseReceipt(detections: OcrDetection[]): ParsedReceipt {
   const grandTotalChecked = grandTotal !== null && expectedGrandTotalCents !== null;
   const grandTotalDifferenceCents = grandTotalChecked ? expectedGrandTotalCents - grandTotal.value : null;
   const grandTotalValid = grandTotalChecked ? approximatelyEqual(expectedGrandTotalCents, grandTotal.value) : null;
-  const restaurantName = findRestaurantName(layout.rows, itemBoundary);
+  const restaurantName = findRestaurantName(layout.rows, itemBoundary, understanding);
   const confidence = receiptConfidence(items, subtotalValid, grandTotalValid, restaurantName.confidence);
   const needsReview = items.length === 0
     || items.some((item) => item.needsReview)
@@ -87,6 +110,7 @@ export function parseReceipt(detections: OcrDetection[]): ParsedReceipt {
     confidence,
     needsReview,
     layout,
+    understanding,
   };
 }
 
@@ -106,6 +130,7 @@ function associateWrappedItemRows(rows: LayoutRow[]): LayoutRow[] {
       && next.centerY - row.centerY < 0.065;
     const canAppendFollowingName = rowHasAmount
       && !nextHasAmount
+      && !hasMeaningfulDescription(row)
       && next !== undefined
       && !isNonItemRow(next)
       && !isHeaderRow(next)
@@ -142,17 +167,20 @@ function parseItemRow(row: LayoutRow, columns: ReceiptColumn[], number: number):
   const numeric = row.detections.map(toNumericToken).filter((token): token is NumericToken => token !== null);
   if (numeric.length === 0) return null;
 
-  const rightmostTotal = chooseByColumn(numeric, columns, 'total') ?? numeric[numeric.length - 1] ?? null;
-  if (!rightmostTotal) return null;
+  const rightmostTotal = chooseByColumn(numeric, columns, 'total')
+    ?? [...numeric].reverse().find((token) => token.detection.centerX > 0.55)
+    ?? null;
   const remaining = numeric.filter((token) => token !== rightmostTotal);
-  const arithmetic = findArithmeticPair(remaining, rightmostTotal.cents);
+  const arithmetic = rightmostTotal ? findArithmeticPair(remaining, rightmostTotal.cents) : null;
   const explicitQuantity = arithmetic?.quantity ?? findExplicitQuantity(row, remaining, columns);
   const remainingAfterQuantity = explicitQuantity
     ? remaining.filter((token) => token !== explicitQuantity)
     : remaining;
-  const unitPrice = arithmetic?.unitPrice ?? chooseByColumn(remainingAfterQuantity, columns, 'unitPrice')
-    ?? remainingAfterQuantity[remainingAfterQuantity.length - 1]
-    ?? null;
+  const unitPrice = rightmostTotal
+    ? arithmetic?.unitPrice ?? chooseByColumn(remainingAfterQuantity, columns, 'unitPrice')
+      ?? remainingAfterQuantity[remainingAfterQuantity.length - 1]
+      ?? null
+    : null;
   const quantity = explicitQuantity?.quantity ?? inferQuantity(remaining, unitPrice);
   const quantityDetection = explicitQuantity?.detection
     ?? (quantity !== null ? remaining.find((token) => token.quantity === quantity && token !== unitPrice)?.detection : undefined);
@@ -160,23 +188,31 @@ function parseItemRow(row: LayoutRow, columns: ReceiptColumn[], number: number):
   const nameDetections = row.detections.filter((detection) => {
     if (numeric.some((token) => token.detection.id === detection.id)) return false;
     return !/^[x×]$/i.test(detection.text.trim());
-  }).filter((detection) => !(detection.centerX > 0.84 && /^(?:SR|ZRL|SST|GST|TAX)$/i.test(detection.text.trim())));
+  }).filter((detection) => {
+    const text = detection.text.trim();
+    if (!/[A-Za-z\u3400-\u9fff\d]/.test(text)) return false;
+    if (detection.centerX < 0.16 && (/^[E€]$/.test(text) || (/^[A-Z]$/.test(text) && detection.confidence < 0.75))) return false;
+    if (detection.centerX > 0.7 && /^(?:SR|ZRL|SST|GST|TAX)$/i.test(text)) return false;
+    if (detection.centerX > 0.7 && /^\d+[A-Za-z]+$/.test(text)) return false;
+    return true;
+  });
   const name = nameDetections.map((item) => item.text).join(' ').trim();
-  if (!name || NON_ITEM_PATTERN.test(name)) return null;
+  const nameLetterCount = name.match(/[A-Za-z\u3400-\u9fff]/g)?.length ?? 0;
+  if (!name || nameLetterCount < 2 || NON_ITEM_PATTERN.test(name)) return null;
 
-  const totalCents = rightmostTotal.cents;
+  const totalCents = rightmostTotal?.cents ?? null;
   const unitPriceCents = unitPrice?.cents ?? null;
-  const arithmeticChecked = quantity !== null && unitPriceCents !== null;
+  const arithmeticChecked = quantity !== null && unitPriceCents !== null && totalCents !== null;
   const differenceCents = arithmeticChecked ? quantity * unitPriceCents - totalCents : null;
   const arithmeticValid = arithmeticChecked ? approximatelyEqual(quantity * unitPriceCents, totalCents) : null;
   const sourceConfidence = mean([
     ...nameDetections.map((item) => item.confidence),
-    rightmostTotal.detection.confidence,
+    ...(rightmostTotal ? [rightmostTotal.detection.confidence] : []),
     ...(unitPrice ? [unitPrice.detection.confidence] : []),
     ...(quantityDetection ? [quantityDetection.confidence] : []),
   ]);
-  const confidence = clamp(sourceConfidence * (arithmeticValid === false ? 0.55 : arithmeticChecked ? 1 : 0.82));
-  const needsReview = arithmeticValid === false || confidence < 0.75 || totalCents < 0;
+  const confidence = clamp(sourceConfidence * (rightmostTotal === null ? 0.55 : arithmeticValid === false ? 0.55 : arithmeticChecked ? 1 : 0.82));
+  const needsReview = rightmostTotal === null || arithmeticValid === false || confidence < 0.75 || (totalCents ?? 0) < 0;
 
   return {
     id: `item_${number}`,
@@ -191,7 +227,7 @@ function parseItemRow(row: LayoutRow, columns: ReceiptColumn[], number: number):
       name: mapping(nameDetections),
       quantity: mapping(quantityDetection ? [quantityDetection] : []),
       unitPrice: mapping(unitPrice ? [unitPrice.detection] : []),
-      total: mapping([rightmostTotal.detection]),
+      total: mapping(rightmostTotal ? [rightmostTotal.detection] : []),
     },
   };
 }
@@ -245,11 +281,15 @@ function chooseByColumn(tokens: NumericToken[], columns: ReceiptColumn[], kind: 
   return candidate && Math.abs(candidate.detection.centerX - column.centerX) < 0.13 ? candidate : null;
 }
 
-function parseCharges(rows: LayoutRow[]): ParsedReceipt['charges'] {
-  const service = findSummaryAmount(rows, SUMMARY_PATTERNS.service);
-  const tax = findSummaryAmount(rows, SUMMARY_PATTERNS.tax);
-  const discount = findSummaryAmount(rows, SUMMARY_PATTERNS.discount);
-  const rounding = findSummaryAmount(rows, SUMMARY_PATTERNS.rounding, true);
+function parseCharges(rows: LayoutRow[], understanding: SemanticClassification, allRows: LayoutRow[]): ParsedReceipt['charges'] {
+  const service = findSemanticAmount(allRows, understanding, ['SERVICE_CHARGE'])
+    ?? findSummaryAmount(rows, SUMMARY_PATTERNS.service);
+  const tax = findSemanticAmount(allRows, understanding, ['SST', 'TAX'])
+    ?? findSummaryAmount(rows, SUMMARY_PATTERNS.tax);
+  const discount = findSemanticAmount(allRows, understanding, ['DISCOUNT'])
+    ?? findSummaryAmount(rows, SUMMARY_PATTERNS.discount);
+  const rounding = findSemanticAmount(allRows, understanding, ['ROUNDING'], true)
+    ?? findSummaryAmount(rows, SUMMARY_PATTERNS.rounding, true);
   return {
     serviceChargeCents: Math.abs(service?.value ?? 0),
     taxCents: Math.abs(tax?.value ?? 0),
@@ -272,7 +312,7 @@ function findGrandTotal(rows: LayoutRow[]): { value: number; detections: OcrDete
     && !/\b(?:cash|change|tendered|received|balance)\b/i.test(row.text));
   // Follow the reference parser's two-tier keyword strategy: explicit payable
   // totals beat a generic "total", which often appears in tax summaries.
-  const priority = candidates.filter((row) => /\b(?:grand\s*total|amount\s*due|total\s*due|net\s*total|total\s*\(?inclusive)\b/i.test(row.text));
+  const priority = candidates.filter((row) => /\b(?:grand\s*total|amount\s*due|total\s*due|total\s*amount|net\s*total|total\s*\(?inclusive)\b/i.test(row.text));
   const row = priority[priority.length - 1] ?? candidates[candidates.length - 1];
   return row ? amountFromRow(row, false) : null;
 }
@@ -304,16 +344,63 @@ function amountFromRow(row: LayoutRow, preserveSign: boolean): { value: number; 
   return { value, detections: selected.detections ?? [selected.detection] };
 }
 
-function findRestaurantName(rows: LayoutRow[], itemBoundary: number): ParsedReceipt['restaurantName'] {
-  const candidate = rows.slice(0, Math.min(itemBoundary, 6)).find((row) =>
+function findRestaurantName(rows: LayoutRow[], itemBoundary: number, understanding: SemanticClassification): ParsedReceipt['restaurantName'] {
+  const semanticCandidates = understanding.lines
+    .filter((line) => line.primaryLabel === 'MERCHANT_NAME')
+    .map((line) => rows.find((row) => row.id === line.rowId))
+    .filter((row): row is LayoutRow => row !== undefined)
+    .filter(isPlausibleMerchantName)
+    .sort((left, right) => merchantNameScore(right) - merchantNameScore(left));
+  const candidate = semanticCandidates[0] ?? rows.slice(0, Math.min(itemBoundary, 10)).filter((row) =>
     /[A-Za-z\u3400-\u9fff]{3}/.test(row.text)
     && !NON_ITEM_PATTERN.test(row.text)
     && !DATE_TIME_PATTERN.test(row.text)
     && !isHeaderRow(row)
-    && row.detections.every((item) => parseMoneyCents(item.text) === null));
+    && row.detections.every((item) => parseMoneyCents(item.text) === null)
+    && isPlausibleMerchantName(row))
+    .sort((left, right) => merchantNameScore(right) - merchantNameScore(left))[0];
   return candidate
     ? { value: candidate.text, confidence: candidate.confidence, mapping: mapping(candidate.detections) }
     : { value: null, confidence: 0, mapping: { ocrIds: [] } };
+}
+
+function findSemanticAmount(
+  rows: LayoutRow[],
+  understanding: SemanticClassification,
+  labels: ReceiptSemanticLabel[],
+  preserveSign = false,
+): { value: number; detections: OcrDetection[] } | null {
+  const line = understanding.lines.find((candidate) => labels.includes(candidate.primaryLabel));
+  const row = line ? rows.find((candidate) => candidate.id === line.rowId) : undefined;
+  return row ? amountFromRow(row, preserveSign) : null;
+}
+
+function uniqueRows(rows: LayoutRow[]): LayoutRow[] {
+  return [...new Map(rows.map((row) => [row.id, row])).values()].sort((left, right) => left.centerY - right.centerY);
+}
+
+function itemSetScore(items: ParsedItem[]): number {
+  return items.reduce((score, item) => score
+    + 1
+    + (item.validation.valid === true ? 0.7 : item.validation.valid === false ? -0.8 : 0)
+    + (item.name.length >= 3 ? 0.2 : -0.2), 0);
+}
+
+function isPlausibleMerchantName(row: LayoutRow): boolean {
+  const letters = row.text.match(/[A-Za-z\u3400-\u9fff]/g)?.length ?? 0;
+  const punctuation = row.text.match(/[^A-Za-z\u3400-\u9fff\d\s&'().-]/g)?.length ?? 0;
+  return letters >= 4 && punctuation <= Math.max(1, Math.floor(row.text.length * 0.12));
+}
+
+function merchantNameScore(row: LayoutRow): number {
+  const letters = row.text.match(/[A-Za-z]/g) ?? [];
+  const uppercase = row.text.match(/[A-Z]/g)?.length ?? 0;
+  const uppercaseRatio = letters.length ? uppercase / letters.length : 0.5;
+  const centered = 1 - Math.min(1, Math.abs((row.bbox.x1 + row.bbox.x2) / 2 - 0.5) * 2);
+  const addressPenalty = /\b(?:JALAN|ROAD|LOT|TAMAN|BANDAR|MALAYSIA|TEL|PHONE)\b/i.test(row.text) ? 0.7 : 0;
+  const legalSuffixPenalty = /\b(?:SDN\s+BHD|BHD|LTD|INC)\b/i.test(row.text) ? 0.12 : 0;
+  return row.confidence * 0.42 + uppercaseRatio * 0.28 + centered * 0.22 + Math.min(1, letters.length / 14) * 0.08
+    - addressPenalty - legalSuffixPenalty;
 }
 
 function isSummaryRow(row: LayoutRow): boolean {
@@ -330,6 +417,15 @@ function isHeaderRow(row: LayoutRow): boolean {
   if (HEADER_PATTERN.test(row.text)) return true;
   const matches = row.text.match(/\b(?:item|description|particulars?|qty|quantity|s\/?price|u\/?price|unit|price|amount|total|amt|tax)\b/gi);
   return (matches?.length ?? 0) >= 2;
+}
+
+function hasMeaningfulDescription(row: LayoutRow): boolean {
+  const text = row.detections
+    .filter((item) => parseMoneyCents(item.text) === null)
+    .map((item) => item.text.trim())
+    .filter((text) => !/^(?:SR|ZRL|SST|GST|TAX|[x×])$/i.test(text))
+    .join(' ');
+  return (text.match(/[A-Za-z\u3400-\u9fff]/g)?.length ?? 0) >= 2;
 }
 
 function toNumericToken(detection: OcrDetection): NumericToken | null {

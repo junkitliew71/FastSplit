@@ -312,10 +312,15 @@ function reset(): void {
 }
 
 function renderResult(result: ReceiptOcrResponse, restoredReview?: ReviewModel): void {
-  status.textContent = result.needsReview ? 'Review recommended' : 'Receipt read successfully';
+  const incompleteItems = result.parsed.items.filter((item) => item.needsReview || item.totalCents === null).length;
+  status.textContent = result.needsReview
+    ? incompleteItems > 0
+      ? `Scan complete — please check ${incompleteItems} ${incompleteItems === 1 ? 'item' : 'items'}. Tap a field, then tap the correct receipt text.`
+      : 'Scan complete — please check the highlighted totals before continuing.'
+    : `Receipt ready — ${result.parsed.items.length} ${result.parsed.items.length === 1 ? 'item' : 'items'} found.`;
   status.className = `status ${result.needsReview ? 'warning' : 'success'}`;
   summary.classList.remove('hidden');
-  summary.innerHTML = `<strong>${result.ocr.detections.length} text regions</strong><span>${Math.round(result.ocr.confidence * 100)}% confidence · Pass ${result.ocr.passUsed} · ${Math.round(result.timingsMs.total ?? 0)} ms${result.cacheHit ? ' · cached' : ''}</span>`;
+  summary.innerHTML = `<strong>${result.parsed.items.length} items found · ${result.ocr.detections.length} selectable receipt fields</strong><span>${Math.round(result.ocr.confidence * 100)}% scan confidence · ${Math.round(result.timingsMs.total ?? 0)} ms${result.cacheHit ? ' · reused recent scan' : ''}</span>`;
   boxes.replaceChildren();
   detections.replaceChildren();
   currentResult = result;

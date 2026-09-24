@@ -2,8 +2,8 @@ import { parseMoneyCents } from './money.js';
 import type { LayoutRow, ReceiptRegion, ReceiptRegionDetection, ReceiptRegionKind, RowRegionAssignment } from './types.js';
 
 const ITEM_HEADER_TOKEN = /\b(?:qty|quantity|item|description|desc|particulars?|s\/?price|u\/?price|unit\s*price|price|amount|amt|total)\b/gi;
-const SUMMARY_MARKER = /\b(?:sub[\s-]*total|service\s*(?:charge|chg)|serv\s*chg|svc\s*chg|sst|gst|sales\s*tax|service\s*tax|discount|round(?:ing|\s*adj(?:ustment)?)|grand\s*total|nett?\s*total|amount\s*due|total\s*due)\b/i;
-const STRONG_SUMMARY_MARKER = /\b(?:sub[\s-]*total|service\s*(?:charge|chg)|sst|gst|grand\s*total|nett?\s*total|amount\s*due|total\s*due)\b/i;
+const SUMMARY_MARKER = /\b(?:sub[\s-]*total|service\s*(?:charge|chg)|serv\s*chg|svc\s*chg|sst|gst|sales\s*tax|service\s*tax|discount|round(?:ing|\s*adj(?:ustment)?)|grand\s*total|nett?\s*total|amount\s*due|total\s*due|total\s*amount)\b/i;
+const STRONG_SUMMARY_MARKER = /\b(?:sub[\s-]*total|service\s*(?:charge|chg)|sst|gst|grand\s*total|nett?\s*total|amount\s*due|total\s*due|total\s*amount)\b/i;
 const PAYMENT_MARKER = /\b(?:payment|cash|card|visa|mastercard|tendered|received|change|credit|debit)\b/i;
 const METADATA_MARKER = /\b(?:table(?:\s*no)?|cashier|date|time|invoice|inv\s*no|bill\s*no|terminal|transaction|trans\s*type|pax|receipt\s*no|order\s*no)\b/i;
 const FOOTER_MARKER = /\b(?:thank\s*you|come\s*again|goods\s*sold|not\s*returnable|no\s*refund|please\s*visit)\b/i;
@@ -17,6 +17,7 @@ type RowSignals = {
   metadata: boolean;
   footer: boolean;
   itemLike: boolean;
+  hasDescription: boolean;
   rightAmountX: number | null;
 };
 
@@ -51,6 +52,7 @@ function rowSignals(row: LayoutRow): RowSignals {
     metadata: METADATA_MARKER.test(text),
     footer: FOOTER_MARKER.test(text),
     itemLike: hasDescription && amounts.length > 0 && (rightAmount?.centerX ?? 0) > 0.55,
+    hasDescription,
     rightAmountX: rightAmount?.centerX ?? null,
   };
 }
@@ -129,7 +131,13 @@ function assignRow(
 function neighborSupportsItem(signals: RowSignals[], index: number): boolean {
   const previous = signals[index - 1];
   const next = signals[index + 1];
-  return Boolean((previous?.itemLike || next?.itemLike) && !signals[index]?.metadata && !signals[index]?.summaryLike);
+  const current = signals[index];
+  const wrappedDescription = current?.hasDescription && !current.itemLike
+    && next?.rightAmountX !== null && (next?.rightAmountX ?? 0) > 0.55 && !next?.hasDescription;
+  const wrappedAmount = !current?.hasDescription && (current?.rightAmountX ?? 0) > 0.55
+    && previous?.hasDescription && !previous.itemLike;
+  return Boolean((previous?.itemLike || next?.itemLike || wrappedDescription || wrappedAmount)
+    && !current?.metadata && !current?.summaryLike);
 }
 
 function likelyMerchant(rows: LayoutRow[], signals: RowSignals[], index: number): boolean {

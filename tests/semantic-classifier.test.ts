@@ -46,7 +46,7 @@ describe('Malaysian receipt keyword normalization and matching', () => {
   it.each([
     ['SST', 'SST'], ['SST 6%', 'SST'], ['GST', 'TAX'], ['TAX', 'TAX'],
     ['SUBTOTAL', 'SUBTOTAL'], ['SUB TOTAL', 'SUBTOTAL'], ['SUB-TOTAL', 'SUBTOTAL'],
-    ['GRAND TOTAL', 'GRAND_TOTAL'], ['NET TOTAL', 'GRAND_TOTAL'], ['NETT TOTAL', 'GRAND_TOTAL'], ['AMOUNT DUE', 'GRAND_TOTAL'],
+    ['GRAND TOTAL', 'GRAND_TOTAL'], ['NET TOTAL', 'GRAND_TOTAL'], ['NETT TOTAL', 'GRAND_TOTAL'], ['AMOUNT DUE', 'GRAND_TOTAL'], ['TOTAL AMOUNT', 'GRAND_TOTAL'],
   ] as const)('classifies %s as %s in SUMMARY', (text, expected) => {
     expect(label([[text, 0.5], ['12.00', 0.84]], 'SUMMARY')).toBe(expected);
   });

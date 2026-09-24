@@ -1,6 +1,11 @@
 import { describe, expect, it } from 'vitest';
 import { normalizeRecognition } from '../server/ocr-engine.js';
-import { getSecondPassReason } from '../server/receipt-ocr.js';
+import { getSecondPassReason, mergePasses } from '../server/receipt-ocr.js';
+import type { OcrDetection, OcrPass } from '../server/types.js';
+
+function detection(id: string, text: string, confidence: number, x1: number, y1: number, x2: number, y2: number): OcrDetection {
+  return { id, text, confidence, bbox: { x1, y1, x2, y2 }, centerX: (x1 + x2) / 2, centerY: (y1 + y2) / 2 };
+}
 
 describe('OCR foundation', () => {
   it('normalizes word coordinates and confidence', () => {
@@ -31,5 +36,25 @@ describe('OCR foundation', () => {
     expect(getSecondPassReason({ ...reliable, confidence: 0.7 }, clear)).toBe('low_ocr_confidence');
     expect(getSecondPassReason({ ...reliable, confidence: 0.7 }, { ...clear, lowContrast: true })).toBe('low_ocr_confidence');
     expect(getSecondPassReason({ ...reliable, detections: [] }, clear)).toBe('too_few_text_regions');
+  });
+
+  it('deduplicates shifted second-pass words and prefers a credible amount correction', () => {
+    const first: OcrPass = {
+      text: 'OPEN FOOD 800K', confidence: 0.7,
+      detections: [
+        detection('ocr_1', 'OPEN', 0.8, 0.18, 0.4, 0.30, 0.43),
+        detection('ocr_2', '800K', 0.62, 0.80, 0.4, 0.91, 0.43),
+      ],
+    };
+    const second: OcrPass = {
+      text: 'OPEN FOOD 28.00', confidence: 0.82,
+      detections: [
+        detection('ocr_1', 'OPEN', 0.84, 0.185, 0.402, 0.305, 0.432),
+        detection('ocr_2', '28.00', 0.60, 0.805, 0.402, 0.915, 0.432),
+      ],
+    };
+    const merged = mergePasses(first, second);
+    expect(merged.detections).toHaveLength(2);
+    expect(merged.detections[1]).toMatchObject({ id: 'ocr_2', text: '28.00' });
   });
 });
