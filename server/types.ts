@@ -71,6 +71,66 @@ export type ReceiptRegionDetection = {
   summaryBoundaryRowId: string | null;
 };
 
+export type ReceiptSemanticLabel =
+  | 'MERCHANT_NAME'
+  | 'MERCHANT_ADDRESS'
+  | 'MERCHANT_PHONE'
+  | 'MERCHANT_WEBSITE'
+  | 'TABLE_NUMBER'
+  | 'CASHIER'
+  | 'DATE'
+  | 'TIME'
+  | 'INVOICE_NUMBER'
+  | 'TERMINAL'
+  | 'TRANSACTION_TYPE'
+  | 'PAX'
+  | 'ITEM_HEADER'
+  | 'ITEM'
+  | 'ITEM_NAME'
+  | 'ITEM_QUANTITY'
+  | 'ITEM_UNIT_PRICE'
+  | 'ITEM_TOTAL'
+  | 'SUBTOTAL'
+  | 'SERVICE_CHARGE'
+  | 'TAX'
+  | 'SST'
+  | 'DISCOUNT'
+  | 'ROUNDING'
+  | 'GRAND_TOTAL'
+  | 'PAYMENT_METHOD'
+  | 'CASH'
+  | 'CHANGE'
+  | 'IGNORE'
+  | 'UNKNOWN';
+
+export type SemanticField = {
+  label: ReceiptSemanticLabel;
+  text: string;
+  valueCents?: number;
+  ocrIds: string[];
+  ocrConfidence: number;
+  semanticConfidence: number;
+  evidence: string[];
+};
+
+export type ClassifiedReceiptLine = {
+  rowId: string;
+  text: string;
+  region: ReceiptRegionKind;
+  regionConfidence: number;
+  primaryLabel: ReceiptSemanticLabel;
+  ocrConfidence: number;
+  semanticConfidence: number;
+  fields: SemanticField[];
+  ocrIds: string[];
+  evidence: string[];
+  warnings: string[];
+};
+
+export type SemanticClassification = {
+  lines: ClassifiedReceiptLine[];
+};
+
 export type ReceiptColumn = {
   kind: 'description' | 'quantity' | 'unitPrice' | 'total' | 'numeric';
   centerX: number;
