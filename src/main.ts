@@ -63,6 +63,11 @@ app.innerHTML = `
         <button id="upload-hero" class="hero-secondary" type="button">⇧&nbsp; Upload receipt</button>
       </div>
       <button id="manual-hero" class="manual-link" type="button">⌕&nbsp; Enter manually&nbsp; →</button>
+      <div class="how-it-works" aria-label="How FastSplit works">
+        <div><span>1</span><strong>Add receipt</strong><small>Take a photo or upload one</small></div>
+        <div><span>2</span><strong>Check & assign</strong><small>Fix anything unclear, then choose diners</small></div>
+        <div><span>3</span><strong>Share totals</strong><small>Send a clear text breakdown</small></div>
+      </div>
     </section>
     <section class="scanner hidden" aria-labelledby="scan-title">
       <button id="scanner-back" class="history-back" type="button">‹&nbsp; Back</button>
@@ -82,10 +87,13 @@ app.innerHTML = `
         <span class="camera">⌁</span><strong>Take a photo or choose a receipt</strong>
         <small>JPG, PNG, WebP · large photos are resized before upload</small>
       </label>
+      <div class="scan-tips" aria-label="Tips for a better scan">
+        <span>✓ Show all four receipt edges</span><span>✓ Avoid shadows and glare</span><span>✓ Keep prices sharp and readable</span>
+      </div>
       <div id="workspace" class="workspace hidden">
         <div class="preview-column"><div class="preview-wrap"><img id="preview" alt="Receipt preview" /><div id="boxes" class="boxes"></div></div></div>
         <div class="result-panel">
-          <div id="status" class="status">Ready to scan</div>
+          <div id="status" class="status" aria-live="polite">Ready to scan</div>
           <p id="image-info" class="image-info"></p>
           <button id="scan-button" class="primary">Read receipt</button>
           <button id="cancel-button" class="secondary">Choose another</button>
@@ -97,6 +105,7 @@ app.innerHTML = `
               <button id="undo-mapping" class="compact-button" disabled>Undo last mapping</button>
               <button id="clear-field" class="compact-button" disabled>Clear field</button>
             </div>
+            <div id="review-health" class="review-health" aria-live="polite"></div>
             <div id="review-fields"></div>
             <button id="confirm-review" class="primary" type="button">Confirm receipt →</button>
             <button id="save-history" class="primary history-save hidden" type="button">Save to History</button>
@@ -110,6 +119,7 @@ app.innerHTML = `
         <p class="step">WHO IS SHARING?</p><h2>Add people</h2>
         <p class="scanner-copy">Add everyone at the table before assigning the food.</p>
         <form id="people-form" class="people-form"><input id="person-name" maxlength="40" placeholder="Name" required><button type="submit">+ Add person</button></form>
+        <p id="people-feedback" class="inline-feedback" aria-live="polite"></p>
         <div id="people-list" class="people-list"></div>
         <button id="people-continue" class="primary" type="button" disabled>Continue to split →</button>
       </section>
@@ -131,6 +141,7 @@ app.innerHTML = `
       <section id="split-step" class="workflow-step hidden">
         <p class="step">WHO HAD WHAT?</p><h2>Split the items</h2>
         <p class="scanner-copy">Select one or more people for every item. Shared items are divided equally.</p>
+        <div id="assignment-progress" class="assignment-progress" aria-live="polite"></div>
         <div id="assignment-list" class="assignment-list"></div>
         <button id="split-continue" class="primary" type="button">Review summary →</button>
       </section>
@@ -189,7 +200,9 @@ const peopleForm = document.querySelector<HTMLFormElement>('#people-form')!;
 const personName = document.querySelector<HTMLInputElement>('#person-name')!;
 const peopleList = document.querySelector<HTMLDivElement>('#people-list')!;
 const peopleContinue = document.querySelector<HTMLButtonElement>('#people-continue')!;
+const peopleFeedback = document.querySelector<HTMLParagraphElement>('#people-feedback')!;
 const assignmentList = document.querySelector<HTMLDivElement>('#assignment-list')!;
+const assignmentProgress = document.querySelector<HTMLDivElement>('#assignment-progress')!;
 const splitContinue = document.querySelector<HTMLButtonElement>('#split-continue')!;
 const finalRestaurant = document.querySelector<HTMLParagraphElement>('#final-restaurant')!;
 const finalTotal = document.querySelector<HTMLDivElement>('#final-total')!;
@@ -225,6 +238,7 @@ const summary = document.querySelector<HTMLDivElement>('#summary')!;
 const detections = document.querySelector<HTMLOListElement>('#detections')!;
 const review = document.querySelector<HTMLElement>('#review')!;
 const reviewFields = document.querySelector<HTMLDivElement>('#review-fields')!;
+const reviewHealth = document.querySelector<HTMLDivElement>('#review-health')!;
 const editingBanner = document.querySelector<HTMLDivElement>('#editing-banner')!;
 const undoButton = document.querySelector<HTMLButtonElement>('#undo-mapping')!;
 const clearButton = document.querySelector<HTMLButtonElement>('#clear-field')!;
@@ -246,6 +260,7 @@ let people: Person[] = [];
 let assignments = new Map<string, Set<string>>();
 let currentStep = 1;
 let manualMode = false;
+let scanProgressTimer: number | null = null;
 
 function beginFlow(): void {
   hero.classList.add('hidden');
@@ -280,6 +295,7 @@ function beginManualFlow(): void {
 
 function reset(): void {
   controller?.abort();
+  stopScanProgress();
   if (prepared) URL.revokeObjectURL(prepared.previewUrl);
   prepared = null;
   input.value = '';
@@ -299,6 +315,7 @@ function reset(): void {
   currentHistoryImage = undefined;
   saveMessage.textContent = '';
   people = [];
+  peopleFeedback.textContent = '';
   assignments = new Map();
   manualMode = false;
   manualItems.replaceChildren();
@@ -391,12 +408,32 @@ function renderReview(): void {
   reviewFields.innerHTML = `${itemCards}
     <article class="item-card totals-card"><div class="item-card-title"><strong>Receipt totals</strong><span class="math-check ${overall.needsReview ? 'invalid' : 'pending'}">${overallText}</span></div>
     <div class="field-grid">${summaryTargets.map(([label, target]) => mappingField(label, target)).join('')}</div></article>`;
+  const issues = reviewIssues(reviewModel);
+  reviewHealth.className = `review-health ${issues.length ? 'needs-attention' : 'ready'}`;
+  reviewHealth.innerHTML = issues.length
+    ? `<strong>${issues.length} ${issues.length === 1 ? 'check' : 'checks'} remaining</strong><span>${escapeHtml(issues.slice(0, 3).join(' · '))}${issues.length > 3 ? ` · +${issues.length - 3} more` : ''}</span>`
+    : '<strong>Ready to continue ✓</strong><span>Items and receipt total are complete.</span>';
+  confirmReviewButton.textContent = issues.length ? `Continue after review (${issues.length}) →` : 'Confirm receipt →';
   editingBanner.innerHTML = activeTarget
     ? `<strong>EDITING</strong><span>${escapeHtml(targetLabel(activeTarget, reviewModel))}</span><small>Tap an OCR box on the receipt${activeTarget.endsWith(':foodName') ? ' · tap more boxes to combine the name' : ''}</small>`
     : '<span>Select a field, then tap OCR text on the receipt</span>';
   undoButton.disabled = mappingHistory.length === 0;
   clearButton.disabled = activeTarget === null;
   updateBoxStates();
+}
+
+function reviewIssues(model: ReviewModel): string[] {
+  const issues: string[] = [];
+  model.items.forEach((item, index) => {
+    const label = `Item ${String(index + 1).padStart(2, '0')}`;
+    if (!item.name.trim()) issues.push(`${label}: food name`);
+    if (item.totalCents === null) issues.push(`${label}: total`);
+    if (item.validation.valid === false) issues.push(`${label}: maths`);
+  });
+  if (model.items.length === 0) issues.push('No items found');
+  if (model.summary.grandTotal.valueCents === null) issues.push('Grand total');
+  if (model.validation.grandTotalValid === false) issues.push('Receipt total does not balance');
+  return issues;
 }
 
 async function showHistory(): Promise<void> {
@@ -565,8 +602,11 @@ function confirmManualReceipt(): void {
 }
 
 function renderPeople(): void {
-  peopleList.innerHTML = people.map((person, index) => `<div class="person-row" data-person-id="${person.id}"><span>${String(index + 1).padStart(2, '0')}</span><strong>${escapeHtml(person.name)}</strong><button type="button" aria-label="Remove ${escapeHtml(person.name)}">Remove</button></div>`).join('');
+  peopleList.innerHTML = people.length
+    ? people.map((person, index) => `<div class="person-row" data-person-id="${person.id}"><span>${String(index + 1).padStart(2, '0')}</span><strong>${escapeHtml(person.name)}</strong><button type="button" aria-label="Remove ${escapeHtml(person.name)}">Remove</button></div>`).join('')
+    : '<div class="friendly-empty"><strong>No one added yet</strong><span>Add yourself first, then everyone sharing the bill.</span></div>';
   peopleContinue.disabled = people.length === 0;
+  peopleContinue.textContent = people.length ? `Continue with ${people.length} ${people.length === 1 ? 'person' : 'people'} →` : 'Add at least one person';
 }
 
 function renderAssignments(): void {
@@ -575,6 +615,17 @@ function renderAssignments(): void {
     const selected = assignments.get(item.id) ?? new Set<string>();
     return `<article class="assignment-card"><div><small>ITEM ${String(index + 1).padStart(2, '0')}</small><strong>${escapeHtml(item.name || 'Unnamed item')}</strong><span>${formatMoney(item.totalCents)}</span></div><div class="person-options">${people.map((person) => `<label><input type="checkbox" data-item-id="${item.id}" data-person-id="${person.id}" ${selected.has(person.id) ? 'checked' : ''}><span>${escapeHtml(person.name)}</span></label>`).join('')}</div></article>`;
   }).join('');
+  updateAssignmentProgress();
+}
+
+function updateAssignmentProgress(): void {
+  if (!reviewModel) return;
+  const assigned = reviewModel.items.filter((item) => (assignments.get(item.id)?.size ?? 0) > 0).length;
+  const total = reviewModel.items.length;
+  const remaining = total - assigned;
+  assignmentProgress.className = `assignment-progress ${remaining === 0 ? 'ready' : ''}`;
+  assignmentProgress.innerHTML = `<strong>${assigned} of ${total} items assigned</strong><span>${remaining === 0 ? 'Everyone’s items are covered ✓' : `${remaining} ${remaining === 1 ? 'item still needs' : 'items still need'} someone`}</span><i style="--progress:${total ? assigned / total * 100 : 0}%"></i>`;
+  splitContinue.textContent = remaining === 0 ? 'Review summary →' : `Review with ${remaining} unassigned →`;
 }
 
 function calculateShares(): Array<Person & { amountCents: number }> {
@@ -626,7 +677,15 @@ function buildShareText(): string {
     `FastSplit · ${restaurant}`,
     `Bill total: ${formatMoney(grand)}`,
     '',
-    ...shares.map((person) => `${person.name}: ${formatMoney(person.amountCents)}`),
+    ...shares.flatMap((person) => {
+      const itemNames = reviewModel?.items
+        .filter((item) => assignments.get(item.id)?.has(person.id))
+        .map((item) => item.name || 'Unnamed item') ?? [];
+      return [
+        `${person.name}: ${formatMoney(person.amountCents)}`,
+        ...(itemNames.length ? [`  ${itemNames.join(' · ')}`] : ['  No items assigned']),
+      ];
+    }),
     '',
     'Split fairly with FastSplit.',
   ].join('\n');
@@ -685,6 +744,27 @@ async function prepareSelectedReceipt(file: File): Promise<void> {
   }
 }
 
+function startScanProgress(): void {
+  stopScanProgress();
+  const messages = [
+    'Uploading receipt securely…',
+    'Reading printed text and prices…',
+    'Reconstructing receipt rows…',
+    'Checking items against the totals…',
+  ];
+  let index = 0;
+  status.textContent = messages[index] ?? 'Reading receipt…';
+  scanProgressTimer = window.setInterval(() => {
+    index = Math.min(index + 1, messages.length - 1);
+    status.textContent = messages[index] ?? 'Reading receipt…';
+  }, 1400);
+}
+
+function stopScanProgress(): void {
+  if (scanProgressTimer !== null) window.clearInterval(scanProgressTimer);
+  scanProgressTimer = null;
+}
+
 input.addEventListener('change', () => {
   const file = input.files?.[0];
   if (file) void prepareSelectedReceipt(file);
@@ -698,8 +778,9 @@ scanButton.addEventListener('click', async () => {
   if (!prepared) return;
   controller = new AbortController();
   scanButton.disabled = true;
+  scanButton.textContent = 'Reading receipt…';
   status.className = 'status loading';
-  status.textContent = 'Uploading receipt… Reading text…';
+  startScanProgress();
   try {
     renderResult(await scanReceipt(prepared.blob, controller.signal));
   } catch (error) {
@@ -707,7 +788,9 @@ scanButton.addEventListener('click', async () => {
     status.className = 'status error';
     status.textContent = error instanceof Error ? error.message : 'Could not read this receipt clearly.';
   } finally {
+    stopScanProgress();
     scanButton.disabled = false;
+    scanButton.textContent = 'Read receipt';
     controller = null;
   }
 });
@@ -766,7 +849,13 @@ peopleForm.addEventListener('submit', (event) => {
   event.preventDefault();
   const name = personName.value.trim();
   if (!name) return;
+  if (people.some((person) => person.name.localeCompare(name, undefined, { sensitivity: 'accent' }) === 0)) {
+    peopleFeedback.textContent = `${name} is already on the list.`;
+    personName.select();
+    return;
+  }
   people.push({ id: crypto.randomUUID(), name });
+  peopleFeedback.textContent = `${name} added.`;
   personName.value = '';
   renderPeople();
   personName.focus();
@@ -788,6 +877,7 @@ assignmentList.addEventListener('change', (event) => {
   const selected = assignments.get(itemId) ?? new Set<string>();
   if (checkbox.checked) selected.add(personId); else selected.delete(personId);
   assignments.set(itemId, selected);
+  updateAssignmentProgress();
 });
 splitContinue.addEventListener('click', () => {
   const missing = reviewModel?.items.some((item) => (assignments.get(item.id)?.size ?? 0) === 0);
