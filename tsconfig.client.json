@@ -12,5 +12,14 @@
     "strict": true,
     "noUncheckedIndexedAccess": true
   },
-  "include": ["src"]
+  "include": [
+    "src",
+    "server/layout.ts",
+    "server/money.ts",
+    "server/receipt-keywords.ts",
+    "server/receipt-parser.ts",
+    "server/receipt-regions.ts",
+    "server/semantic-classifier.ts",
+    "server/types.ts"
+  ]
 }
