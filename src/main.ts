@@ -15,6 +15,7 @@ import {
 import { prepareReceiptImage, type PreparedImage } from './image.ts';
 import { deleteReceiptHistory, getReceiptHistory, listReceiptHistory, saveReceiptHistory } from './firebase-history.ts';
 import { createHistoryRecord, type ReceiptHistoryRecord } from './receipt-history-model.ts';
+import { deleteLocalHistory, getLocalHistory, listLocalHistory, saveLocalHistory } from './local-history.ts';
 import {
   assignDetection,
   clearTarget,
@@ -47,7 +48,7 @@ app.innerHTML = `
   <header class="topbar">
     <a class="brand" href="/" aria-label="FastSplit home"><span>F</span> FastSplit</a>
     <div class="topbar-actions">
-      <div class="lang" aria-label="Language"><button class="active">EN</button><button>中文</button></div>
+      <div class="lang" aria-label="Language"><button id="lang-en" class="active" type="button">EN</button><button id="lang-zh" type="button">中文</button></div>
       <button id="split-nav" class="header-link" type="button">Split a bill</button>
       <button id="history-nav" class="history-nav hidden" type="button">↶&nbsp; History</button>
       <div id="account-chip" class="account-chip hidden"><span id="account-avatar"></span><span id="account-name"></span><button id="logout-button" type="button">Log out</button></div>
@@ -152,6 +153,7 @@ app.innerHTML = `
         <div id="person-totals" class="person-totals"></div>
         <div id="allocation-check" class="allocation-check"></div>
         <button id="share-result" class="primary share-result" type="button">⌯&nbsp; Share result</button>
+        <p id="history-saved-message" class="save-message" aria-live="polite"></p>
         <p id="share-message" class="save-message" aria-live="polite"></p>
         <button id="start-over" class="primary" type="button">Split another bill</button>
       </section>
@@ -161,7 +163,7 @@ app.innerHTML = `
       <button id="history-back" class="history-back" type="button">← Back to receipt</button>
       <p class="eyebrow">YOUR SAVED RECEIPTS</p>
       <h2 id="history-title">Receipt history</h2>
-      <p class="intro">Your receipts stay here until you choose to delete them.</p>
+      <p id="history-description" class="intro">Records are kept on this browser for 72 hours, then deleted automatically.</p>
       <div id="history-status" class="history-status" aria-live="polite"></div>
       <div id="history-list" class="history-list"></div>
     </section>
@@ -223,6 +225,10 @@ const manualContinue = document.querySelector<HTMLButtonElement>('#manual-contin
 const historyBack = document.querySelector<HTMLButtonElement>('#history-back')!;
 const historyStatus = document.querySelector<HTMLDivElement>('#history-status')!;
 const historyList = document.querySelector<HTMLDivElement>('#history-list')!;
+const historyDescription = document.querySelector<HTMLParagraphElement>('#history-description')!;
+const historySavedMessage = document.querySelector<HTMLParagraphElement>('#history-saved-message')!;
+const langEn = document.querySelector<HTMLButtonElement>('#lang-en')!;
+const langZh = document.querySelector<HTMLButtonElement>('#lang-zh')!;
 
 const input = document.querySelector<HTMLInputElement>('#receipt-input')!;
 const uploadInput = document.querySelector<HTMLInputElement>('#upload-input')!;
@@ -261,6 +267,62 @@ let assignments = new Map<string, Set<string>>();
 let currentStep = 1;
 let manualMode = false;
 let scanProgressTimer: number | null = null;
+type Locale = 'en' | 'zh';
+let locale: Locale = localStorage.getItem('fastsplit:language') === 'zh' ? 'zh' : 'en';
+
+const copy = {
+  en: {
+    splitNav: 'Split a bill', history: '↶\u00a0 History', hero: 'Split the bill.<br><em>Pay for what you ate.</em>',
+    intro: 'Add your receipt, choose who had what, and share the totals.', scan: '▣\u00a0 Scan receipt', upload: '⇧\u00a0 Upload receipt', manual: '⌕\u00a0 Enter manually\u00a0 →',
+    historyTitle: 'Receipt history', historyBack: '← Back to receipt', historyDescription: 'Records are kept on this browser for 72 hours, then deleted automatically.',
+    emptyHistory: 'No saved receipts yet. Finish splitting a bill and it will appear here.', loadingHistory: 'Loading your receipts…', view: 'View receipt', remove: 'Delete',
+    expires: 'Expires in', saved: 'Saved to History for 72 hours.', receipt: 'Receipt', review: 'Review', people: 'People', split: 'Split', summary: 'Summary',
+  },
+  zh: {
+    splitNav: '分摊账单', history: '↶\u00a0 历史记录', hero: '轻松分账。<br><em>只付自己吃的。</em>',
+    intro: '添加收据、选择每个人吃了什么，然后分享账单。', scan: '▣\u00a0 扫描收据', upload: '⇧\u00a0 上传收据', manual: '⌕\u00a0 手动输入\u00a0 →',
+    historyTitle: '收据历史记录', historyBack: '← 返回账单', historyDescription: '记录会保存在这个浏览器 72 小时，之后自动删除。',
+    emptyHistory: '还没有保存的收据。完成一次分账后，记录会出现在这里。', loadingHistory: '正在读取历史记录…', view: '查看账单', remove: '删除',
+    expires: '剩余', saved: '已保存到历史记录，有效期 72 小时。', receipt: '收据', review: '检查', people: '人员', split: '分账', summary: '结果',
+  },
+} as const;
+
+function c(key: keyof typeof copy.en): string {
+  return copy[locale][key];
+}
+
+function applyLanguage(): void {
+  document.documentElement.lang = locale === 'zh' ? 'zh-CN' : 'en';
+  langEn.classList.toggle('active', locale === 'en');
+  langZh.classList.toggle('active', locale === 'zh');
+  splitNav.textContent = c('splitNav');
+  historyNav.innerHTML = c('history');
+  hero.querySelector('h1')!.innerHTML = c('hero');
+  hero.querySelector<HTMLParagraphElement>('.intro')!.textContent = c('intro');
+  scanHero.innerHTML = c('scan');
+  uploadHero.innerHTML = c('upload');
+  manualHero.innerHTML = c('manual');
+  historyBack.textContent = c('historyBack');
+  document.querySelector<HTMLElement>('#history-title')!.textContent = c('historyTitle');
+  historyDescription.textContent = c('historyDescription');
+  const wizardLabels = [c('receipt'), c('review'), c('people'), c('split'), c('summary')];
+  wizard.querySelectorAll<HTMLButtonElement>('[data-step]').forEach((button, index) => {
+    const number = button.querySelector('span')?.outerHTML ?? `<span>${index + 1}</span>`;
+    button.innerHTML = `${number}${wizardLabels[index] ?? ''}`;
+  });
+  if (!historyView.classList.contains('hidden')) void showHistory();
+  if (reviewModel) {
+    renderPeople();
+    if (currentStep === 4) renderAssignments();
+    if (currentStep === 5) renderFinalSummary();
+  }
+}
+
+function setLanguage(next: Locale): void {
+  locale = next;
+  localStorage.setItem('fastsplit:language', next);
+  applyLanguage();
+}
 
 function beginFlow(): void {
   hero.classList.add('hidden');
@@ -314,6 +376,7 @@ function reset(): void {
   currentHistoryId = null;
   currentHistoryImage = undefined;
   saveMessage.textContent = '';
+  historySavedMessage.textContent = '';
   people = [];
   peopleFeedback.textContent = '';
   assignments = new Map();
@@ -439,30 +502,60 @@ function reviewIssues(model: ReviewModel): string[] {
 async function showHistory(): Promise<void> {
   scanView.classList.add('hidden');
   historyView.classList.remove('hidden');
-  if (currentIdentity?.mode !== 'authenticated') {
-    historyList.replaceChildren();
-    historyStatus.textContent = 'No saved receipts yet.';
-    return;
-  }
-  historyStatus.textContent = 'Loading your receipts…';
+  historyStatus.textContent = c('loadingHistory');
   historyList.replaceChildren();
   try {
+    if (currentIdentity?.mode !== 'authenticated') {
+      const records = listLocalHistory(localStorage);
+      historyStatus.textContent = records.length ? '' : c('emptyHistory');
+      historyList.innerHTML = records.map((record) => historyCard(record.id, record.restaurant, record.grandTotalCents, new Date(record.updatedAt), new Date(record.expiresAt))).join('');
+      return;
+    }
     const records = await listReceiptHistory(currentIdentity.uid);
-    historyStatus.textContent = records.length ? '' : 'No saved receipts yet.';
-    historyList.innerHTML = records.map((record) => `<article class="history-card" data-history-id="${escapeHtml(record.id)}">
-      <div><strong>${escapeHtml(record.restaurant)}</strong><span>${record.updatedAt ? record.updatedAt.toLocaleString() : 'Saved receipt'}</span></div>
-      <div class="history-amount">${formatMoney(record.grandTotalCents)}</div>
-      <button data-action="open" type="button">View receipt</button>
-      <button data-action="delete" class="danger-link" type="button">Delete</button>
-    </article>`).join('');
+    historyStatus.textContent = records.length ? '' : c('emptyHistory');
+    historyList.innerHTML = records.map((record) => historyCard(record.id, record.restaurant, record.grandTotalCents, record.updatedAt, null)).join('');
   } catch (error) {
     historyStatus.textContent = friendlyHistoryError(error);
   }
 }
 
+function historyCard(id: string, restaurant: string, total: number | null, updatedAt: Date | null, expiresAt: Date | null): string {
+  const savedText = updatedAt ? updatedAt.toLocaleString(locale === 'zh' ? 'zh-CN' : 'en-MY') : '';
+  const expiryText = expiresAt ? `<span>${c('expires')} ${formatTimeRemaining(expiresAt.getTime() - Date.now())}</span>` : '';
+  return `<article class="history-card" data-history-id="${escapeHtml(id)}">
+    <div><strong>${escapeHtml(restaurant)}</strong><span>${escapeHtml(savedText)}</span>${expiryText}</div>
+    <div class="history-amount">${formatMoney(total)}</div>
+    <button data-action="open" type="button">${c('view')}</button>
+    <button data-action="delete" class="danger-link" type="button">${c('remove')}</button>
+  </article>`;
+}
+
+function formatTimeRemaining(milliseconds: number): string {
+  const hours = Math.max(1, Math.ceil(milliseconds / 3_600_000));
+  if (locale === 'zh') return hours >= 24 ? `${Math.ceil(hours / 24)} 天` : `${hours} 小时`;
+  return hours >= 24 ? `${Math.ceil(hours / 24)}d` : `${hours}h`;
+}
+
 async function openHistoryReceipt(id: string): Promise<void> {
-  if (currentIdentity?.mode !== 'authenticated') return;
-  historyStatus.textContent = 'Opening receipt…';
+  if (currentIdentity?.mode !== 'authenticated') {
+    const record = getLocalHistory(localStorage, id);
+    if (!record) { await showHistory(); return; }
+    reset();
+    currentHistoryId = record.id;
+    currentResult = structuredClone(record.ocrResult);
+    reviewModel = cloneReviewModel(record.reviewModel);
+    people = structuredClone(record.people);
+    assignments = new Map(record.assignments.map((item) => [item.itemId, new Set(item.personIds)]));
+    scanView.classList.remove('hidden');
+    historyView.classList.add('hidden');
+    hero.classList.add('hidden');
+    scannerSection.classList.remove('hidden');
+    renderFinalSummary();
+    goToStep(5);
+    historySavedMessage.textContent = locale === 'zh' ? '这是已保存的分账记录。' : 'Viewing a saved split.';
+    return;
+  }
+  historyStatus.textContent = locale === 'zh' ? '正在打开收据…' : 'Opening receipt…';
   const record = await getReceiptHistory(currentIdentity.uid, id);
   reset();
   currentHistoryId = record.id;
@@ -478,7 +571,14 @@ async function openHistoryReceipt(id: string): Promise<void> {
 }
 
 async function removeHistoryReceipt(id: string): Promise<void> {
-  if (currentIdentity?.mode !== 'authenticated') return;
+  if (currentIdentity?.mode !== 'authenticated') {
+    const record = getLocalHistory(localStorage, id);
+    if (!record || !window.confirm(locale === 'zh' ? `删除“${record.restaurant}”的记录？` : `Delete “${record.restaurant}”?`)) return;
+    deleteLocalHistory(localStorage, id);
+    if (currentHistoryId === id) reset();
+    await showHistory();
+    return;
+  }
   const record = await getReceiptHistory(currentIdentity.uid, id);
   if (!window.confirm(`Delete “${record.restaurant}” permanently?`)) return;
   await deleteReceiptHistory(currentIdentity.uid, record);
@@ -604,9 +704,13 @@ function confirmManualReceipt(): void {
 function renderPeople(): void {
   peopleList.innerHTML = people.length
     ? people.map((person, index) => `<div class="person-row" data-person-id="${person.id}"><span>${String(index + 1).padStart(2, '0')}</span><strong>${escapeHtml(person.name)}</strong><button type="button" aria-label="Remove ${escapeHtml(person.name)}">Remove</button></div>`).join('')
-    : '<div class="friendly-empty"><strong>No one added yet</strong><span>Add yourself first, then everyone sharing the bill.</span></div>';
+    : locale === 'zh'
+      ? '<div class="friendly-empty"><strong>还没有添加人员</strong><span>先添加自己，再添加一起分账的朋友。</span></div>'
+      : '<div class="friendly-empty"><strong>No one added yet</strong><span>Add yourself first, then everyone sharing the bill.</span></div>';
   peopleContinue.disabled = people.length === 0;
-  peopleContinue.textContent = people.length ? `Continue with ${people.length} ${people.length === 1 ? 'person' : 'people'} →` : 'Add at least one person';
+  peopleContinue.textContent = locale === 'zh'
+    ? people.length ? `与 ${people.length} 人继续 →` : '请至少添加一人'
+    : people.length ? `Continue with ${people.length} ${people.length === 1 ? 'person' : 'people'} →` : 'Add at least one person';
 }
 
 function renderAssignments(): void {
@@ -624,8 +728,10 @@ function updateAssignmentProgress(): void {
   const total = reviewModel.items.length;
   const remaining = total - assigned;
   assignmentProgress.className = `assignment-progress ${remaining === 0 ? 'ready' : ''}`;
-  assignmentProgress.innerHTML = `<strong>${assigned} of ${total} items assigned</strong><span>${remaining === 0 ? 'Everyone’s items are covered ✓' : `${remaining} ${remaining === 1 ? 'item still needs' : 'items still need'} someone`}</span><i style="--progress:${total ? assigned / total * 100 : 0}%"></i>`;
-  splitContinue.textContent = remaining === 0 ? 'Review summary →' : `Review with ${remaining} unassigned →`;
+  assignmentProgress.innerHTML = locale === 'zh'
+    ? `<strong>已分配 ${assigned}/${total} 个项目</strong><span>${remaining === 0 ? '所有项目都已分配 ✓' : `还有 ${remaining} 个项目未分配`}</span><i style="--progress:${total ? assigned / total * 100 : 0}%"></i>`
+    : `<strong>${assigned} of ${total} items assigned</strong><span>${remaining === 0 ? 'Everyone’s items are covered ✓' : `${remaining} ${remaining === 1 ? 'item still needs' : 'items still need'} someone`}</span><i style="--progress:${total ? assigned / total * 100 : 0}%"></i>`;
+  splitContinue.textContent = locale === 'zh' ? (remaining === 0 ? '查看结果 →' : `继续查看（${remaining} 项未分配）→`) : (remaining === 0 ? 'Review summary →' : `Review with ${remaining} unassigned →`);
 }
 
 function calculateShares(): Array<Person & { amountCents: number }> {
@@ -663,9 +769,23 @@ function renderFinalSummary(): void {
   const grand = reviewModel.summary.grandTotal.valueCents ?? shares.reduce((sum, person) => sum + person.amountCents, 0);
   const allocated = shares.reduce((sum, person) => sum + person.amountCents, 0);
   finalRestaurant.textContent = currentResult.parsed.restaurantName.value || 'Receipt';
-  finalTotal.innerHTML = `<span>Everyone’s share, sorted.</span><strong>${formatMoney(grand)}</strong><small>${people.length} people · ${reviewModel.items.length} items</small>`;
+  finalTotal.innerHTML = `<span>${locale === 'zh' ? '每个人应付金额已计算完成。' : 'Everyone’s share, sorted.'}</span><strong>${formatMoney(grand)}</strong><small>${locale === 'zh' ? `${people.length} 人 · ${reviewModel.items.length} 个项目` : `${people.length} people · ${reviewModel.items.length} items`}</small>`;
   personTotals.innerHTML = shares.map((person) => `<article><span>${escapeHtml(person.name.charAt(0).toUpperCase())}</span><strong>${escapeHtml(person.name)}</strong><b>${formatMoney(person.amountCents)}</b></article>`).join('');
-  allocationCheck.innerHTML = `<div><span>Bill total</span><strong>${formatMoney(grand)}</strong></div><div><span>Allocated</span><strong>${formatMoney(allocated)}</strong></div><div class="${allocated === grand ? 'balanced' : 'unbalanced'}"><span>${allocated === grand ? '✓ Difference' : '△ Difference'}</span><strong>${formatMoney(grand - allocated)}</strong></div>`;
+  allocationCheck.innerHTML = `<div><span>${locale === 'zh' ? '账单总额' : 'Bill total'}</span><strong>${formatMoney(grand)}</strong></div><div><span>${locale === 'zh' ? '已分配' : 'Allocated'}</span><strong>${formatMoney(allocated)}</strong></div><div class="${allocated === grand ? 'balanced' : 'unbalanced'}"><span>${allocated === grand ? `✓ ${locale === 'zh' ? '差额' : 'Difference'}` : `△ ${locale === 'zh' ? '差额' : 'Difference'}`}</span><strong>${formatMoney(grand - allocated)}</strong></div>`;
+}
+
+function saveCompletedSplit(): void {
+  if (!reviewModel || !currentResult || currentIdentity?.mode === 'authenticated') return;
+  const saved = saveLocalHistory(localStorage, {
+    restaurant: currentResult.parsed.restaurantName.value || (locale === 'zh' ? '未命名收据' : 'Unnamed receipt'),
+    grandTotalCents: reviewModel.summary.grandTotal.valueCents,
+    reviewModel: cloneReviewModel(reviewModel),
+    ocrResult: structuredClone(currentResult),
+    people: structuredClone(people),
+    assignments: [...assignments].map(([itemId, personIds]) => ({ itemId, personIds: [...personIds] })),
+  }, currentHistoryId);
+  currentHistoryId = saved.id;
+  historySavedMessage.textContent = c('saved');
 }
 
 function buildShareText(): string {
@@ -881,9 +1001,10 @@ assignmentList.addEventListener('change', (event) => {
 });
 splitContinue.addEventListener('click', () => {
   const missing = reviewModel?.items.some((item) => (assignments.get(item.id)?.size ?? 0) === 0);
-  if (missing && !window.confirm('Some items are not assigned. Continue anyway?')) return;
+  if (missing && !window.confirm(locale === 'zh' ? '还有项目未分配，仍然继续吗？' : 'Some items are not assigned. Continue anyway?')) return;
   renderFinalSummary();
   goToStep(5);
+  saveCompletedSplit();
 });
 startOver.addEventListener('click', () => { reset(); scannerSection.classList.add('hidden'); hero.classList.remove('hidden'); });
 shareResult.addEventListener('click', () => void shareBillResult());
@@ -1009,5 +1130,9 @@ logoutButton.addEventListener('click', async () => {
   }
 });
 
+langEn.addEventListener('click', () => setLanguage('en'));
+langZh.addEventListener('click', () => setLanguage('zh'));
+
 // FastSplit now opens directly without an authentication gate.
 enterApplication(enableGuestMode(localStorage));
+applyLanguage();
