@@ -1,6 +1,7 @@
 import type { ReceiptOcrResponse } from './types.ts';
 
-const OCR_ENDPOINT = '/api/ocr/receipt';
+const API_BASE_URL = (import.meta.env.VITE_API_BASE_URL as string | undefined)?.replace(/\/$/, '') ?? '';
+const OCR_ENDPOINT = `${API_BASE_URL}/api/ocr/receipt`;
 
 type ApiError = { error?: { message?: string } };
 
