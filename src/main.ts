@@ -66,7 +66,7 @@ app.innerHTML = `
       <button id="manual-hero" class="manual-link" type="button">⌕&nbsp; Enter manually&nbsp; →</button>
       <div class="how-it-works" aria-label="How FastSplit works">
         <div><span>1</span><strong>Add receipt</strong><small>Take a photo or upload one</small></div>
-        <div><span>2</span><strong>Check & assign</strong><small>Fix anything unclear, then choose diners</small></div>
+        <div><span>2</span><strong>Add diners</strong><small>Add everyone sharing the bill</small></div>
         <div><span>3</span><strong>Share totals</strong><small>Send a clear text breakdown</small></div>
       </div>
     </section>
@@ -74,10 +74,9 @@ app.innerHTML = `
       <button id="scanner-back" class="history-back" type="button">‹&nbsp; Back</button>
       <nav id="wizard" class="wizard" aria-label="Bill steps">
         <button class="active" data-step="1" type="button"><span>1</span>Receipt</button>
-        <button data-step="2" type="button"><span>2</span>Review</button>
-        <button data-step="3" type="button"><span>3</span>People</button>
-        <button data-step="4" type="button"><span>4</span>Split</button>
-        <button data-step="5" type="button"><span>5</span>Summary</button>
+        <button data-step="2" type="button"><span>2</span>People</button>
+        <button data-step="3" type="button"><span>3</span>Split</button>
+        <button data-step="4" type="button"><span>4</span>Summary</button>
       </nav>
       <div id="receipt-step" class="workflow-step">
       <p class="step">BRING THE BILL</p>
@@ -305,7 +304,7 @@ function applyLanguage(): void {
   historyBack.textContent = c('historyBack');
   document.querySelector<HTMLElement>('#history-title')!.textContent = c('historyTitle');
   historyDescription.textContent = c('historyDescription');
-  const wizardLabels = [c('receipt'), c('review'), c('people'), c('split'), c('summary')];
+  const wizardLabels = [c('receipt'), c('people'), c('split'), c('summary')];
   wizard.querySelectorAll<HTMLButtonElement>('[data-step]').forEach((button, index) => {
     const number = button.querySelector('span')?.outerHTML ?? `<span>${index + 1}</span>`;
     button.innerHTML = `${number}${wizardLabels[index] ?? ''}`;
@@ -313,8 +312,8 @@ function applyLanguage(): void {
   if (!historyView.classList.contains('hidden')) void showHistory();
   if (reviewModel) {
     renderPeople();
-    if (currentStep === 4) renderAssignments();
-    if (currentStep === 5) renderFinalSummary();
+    if (currentStep === 3) renderAssignments();
+    if (currentStep === 4) renderFinalSummary();
   }
 }
 
@@ -333,12 +332,11 @@ function beginFlow(): void {
 
 function goToStep(step: number): void {
   currentStep = step;
-  receiptStep.classList.toggle('hidden', step !== 1 && step !== 2);
-  peopleStep.classList.toggle('hidden', step !== 3);
-  splitStep.classList.toggle('hidden', step !== 4);
-  finalStep.classList.toggle('hidden', step !== 5);
-  manualStep.classList.toggle('hidden', !manualMode || step !== 2);
-  if (manualMode && step === 2) receiptStep.classList.add('hidden');
+  receiptStep.classList.toggle('hidden', step !== 1 || manualMode);
+  peopleStep.classList.toggle('hidden', step !== 2);
+  splitStep.classList.toggle('hidden', step !== 3);
+  finalStep.classList.toggle('hidden', step !== 4);
+  manualStep.classList.toggle('hidden', !manualMode || step !== 1);
   scannerSection.dataset.step = String(step);
   for (const button of wizard.querySelectorAll<HTMLButtonElement>('[data-step]')) {
     const buttonStep = Number(button.dataset.step);
@@ -352,7 +350,7 @@ function beginManualFlow(): void {
   beginFlow();
   manualMode = true;
   addManualItem();
-  goToStep(2);
+  goToStep(1);
 }
 
 function reset(): void {
@@ -407,7 +405,7 @@ function renderResult(result: ReceiptOcrResponse, restoredReview?: ReviewModel):
   reviewModel = restoredReview ? cloneReviewModel(restoredReview) : createReviewModel(result);
   activeTarget = null;
   mappingHistory = [];
-  review.classList.remove('hidden');
+  review.classList.add('hidden');
   rawDetections.classList.remove('hidden');
   saveHistoryButton.classList.toggle('hidden', currentIdentity?.mode !== 'authenticated');
 
@@ -437,7 +435,6 @@ function renderResult(result: ReceiptOcrResponse, restoredReview?: ReviewModel):
     row.addEventListener('dragstart', (event) => event.dataTransfer?.setData('text/x-fastsplit-ocr-id', item.id));
     detections.append(row);
   }
-  renderReview();
   goToStep(2);
 }
 
@@ -551,7 +548,7 @@ async function openHistoryReceipt(id: string): Promise<void> {
     hero.classList.add('hidden');
     scannerSection.classList.remove('hidden');
     renderFinalSummary();
-    goToStep(5);
+    goToStep(4);
     historySavedMessage.textContent = locale === 'zh' ? '这是已保存的分账记录。' : 'Viewing a saved split.';
     return;
   }
@@ -567,7 +564,7 @@ async function openHistoryReceipt(id: string): Promise<void> {
   historyView.classList.add('hidden');
   renderResult(record.ocrResult, record.ocrMappings);
   saveMessage.textContent = 'Opened from History. Saving will update this receipt.';
-  review.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  peopleStep.scrollIntoView({ behavior: 'smooth', block: 'start' });
 }
 
 async function removeHistoryReceipt(id: string): Promise<void> {
@@ -698,7 +695,7 @@ function confirmManualReceipt(): void {
     validation: { itemArithmeticValid: items.every((item) => item.validation.valid), subtotalValid: true, grandTotalValid: true, needsReview: items.some((item) => !item.validation.valid) },
   };
   currentResult = { parsed: { restaurantName: { value: manualRestaurant.value.trim() || 'Manual receipt' } } } as ReceiptOcrResponse;
-  goToStep(3);
+  goToStep(2);
 }
 
 function renderPeople(): void {
@@ -964,7 +961,7 @@ historyList.addEventListener('click', (event) => {
   operation.catch((error) => { historyStatus.textContent = friendlyHistoryError(error); });
 });
 
-confirmReviewButton.addEventListener('click', () => goToStep(3));
+confirmReviewButton.addEventListener('click', () => goToStep(2));
 peopleForm.addEventListener('submit', (event) => {
   event.preventDefault();
   const name = personName.value.trim();
@@ -988,7 +985,7 @@ peopleList.addEventListener('click', (event) => {
   for (const selected of assignments.values()) selected.delete(id);
   renderPeople();
 });
-peopleContinue.addEventListener('click', () => { renderAssignments(); goToStep(4); });
+peopleContinue.addEventListener('click', () => { renderAssignments(); goToStep(3); });
 assignmentList.addEventListener('change', (event) => {
   const checkbox = event.target as HTMLInputElement;
   const itemId = checkbox.dataset.itemId;
@@ -1003,7 +1000,7 @@ splitContinue.addEventListener('click', () => {
   const missing = reviewModel?.items.some((item) => (assignments.get(item.id)?.size ?? 0) === 0);
   if (missing && !window.confirm(locale === 'zh' ? '还有项目未分配，仍然继续吗？' : 'Some items are not assigned. Continue anyway?')) return;
   renderFinalSummary();
-  goToStep(5);
+  goToStep(4);
   saveCompletedSplit();
 });
 startOver.addEventListener('click', () => { reset(); scannerSection.classList.add('hidden'); hero.classList.remove('hidden'); });
