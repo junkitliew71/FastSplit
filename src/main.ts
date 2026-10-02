@@ -33,7 +33,7 @@ const app = document.querySelector<HTMLDivElement>('#app');
 if (!app) throw new Error('App root is missing.');
 
 const receiptLogo = `
-  <span class="receipt-logo" aria-hidden="true"><img src="/fastsplit-icon.png" alt=""></span>`;
+  <span class="receipt-logo" aria-hidden="true"><img src="${import.meta.env.BASE_URL}fastsplit-icon.png" alt=""></span>`;
 
 const cameraIcon = `
   <svg class="camera-icon" viewBox="0 0 24 24" aria-hidden="true">
