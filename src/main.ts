@@ -32,10 +32,19 @@ import type { ReceiptOcrResponse } from './types.ts';
 const app = document.querySelector<HTMLDivElement>('#app');
 if (!app) throw new Error('App root is missing.');
 
+const receiptLogo = `
+  <span class="receipt-logo" aria-hidden="true"><img src="/fastsplit-icon.png" alt=""></span>`;
+
+const cameraIcon = `
+  <svg class="camera-icon" viewBox="0 0 24 24" aria-hidden="true">
+    <path d="M8.5 6.5 10 4.5h4l1.5 2H19a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-9a2 2 0 0 1 2-2h3.5Z"/>
+    <circle cx="12" cy="13" r="3.5"/>
+  </svg>`;
+
 app.innerHTML = `
   <section id="auth-gate" class="auth-gate hidden" aria-labelledby="auth-title">
     <div class="auth-card">
-      <a class="brand auth-brand" href="/" aria-label="FastSplit home"><span>F</span> FastSplit</a>
+      <a class="brand auth-brand" href="/" aria-label="FastSplit home">${receiptLogo}<b>FastSplit</b></a>
       <p class="eyebrow">WELCOME TO FASTSPLIT</p>
       <h1 id="auth-title">Split together.<br><em>Settle simply.</em></h1>
       <p class="intro">Sign in to keep your account ready across devices, or continue as a guest to split a bill now.</p>
@@ -46,7 +55,7 @@ app.innerHTML = `
     </div>
   </section>
   <header class="topbar">
-    <a class="brand" href="/" aria-label="FastSplit home"><span>F</span> FastSplit</a>
+    <a class="brand" href="/" aria-label="FastSplit home">${receiptLogo}<b>FastSplit</b></a>
     <div class="topbar-actions">
       <div class="lang" aria-label="Language"><button id="lang-en" class="active" type="button">EN</button><button id="lang-zh" type="button">中文</button></div>
       <button id="split-nav" class="header-link" type="button">Split a bill</button>
@@ -60,7 +69,7 @@ app.innerHTML = `
       <h1>Split the bill.<br><em>Pay for what you ate.</em></h1>
       <p class="intro">Add your receipt, choose who had what, and share the totals.</p>
       <div class="hero-actions">
-        <button id="scan-hero" class="hero-primary" type="button">▣&nbsp; Scan receipt</button>
+        <button id="scan-hero" class="hero-primary" type="button">${cameraIcon}<span>Scan receipt</span></button>
         <button id="upload-hero" class="hero-secondary" type="button">⇧&nbsp; Upload receipt</button>
       </div>
       <button id="manual-hero" class="manual-link" type="button">⌕&nbsp; Enter manually&nbsp; →</button>
@@ -84,7 +93,7 @@ app.innerHTML = `
       <label class="dropzone" id="dropzone">
         <input id="receipt-input" type="file" accept="image/*" capture="environment" />
         <input id="upload-input" type="file" accept="image/*" />
-        <span class="camera">⌁</span><strong>Take a photo or choose a receipt</strong>
+        <span class="camera">${cameraIcon}</span><strong>Take a photo or choose a receipt</strong>
         <small>JPG, PNG, WebP · large photos are resized before upload</small>
       </label>
       <div class="scan-tips" aria-label="Tips for a better scan">
@@ -95,7 +104,7 @@ app.innerHTML = `
         <div class="result-panel">
           <div id="status" class="status" aria-live="polite">Ready to scan</div>
           <p id="image-info" class="image-info"></p>
-          <button id="scan-button" class="primary">Read receipt</button>
+          <button id="scan-button" class="primary scan-button"><span class="scan-button-label">Read receipt</span><span class="scan-button-percent" aria-hidden="true"></span><i class="scan-button-progress" aria-hidden="true"></i></button>
           <button id="cancel-button" class="secondary">Choose another</button>
           <div id="summary" class="summary hidden"></div>
           <section id="review" class="review hidden" aria-labelledby="review-title">
@@ -266,20 +275,21 @@ let assignments = new Map<string, Set<string>>();
 let currentStep = 1;
 let manualMode = false;
 let scanProgressTimer: number | null = null;
+let scanProgress = 0;
 type Locale = 'en' | 'zh';
 let locale: Locale = localStorage.getItem('fastsplit:language') === 'zh' ? 'zh' : 'en';
 
 const copy = {
   en: {
     splitNav: 'Split a bill', history: '↶\u00a0 History', hero: 'Split the bill.<br><em>Pay for what you ate.</em>',
-    intro: 'Add your receipt, choose who had what, and share the totals.', scan: '▣\u00a0 Scan receipt', upload: '⇧\u00a0 Upload receipt', manual: '⌕\u00a0 Enter manually\u00a0 →',
+    intro: 'Add your receipt, choose who had what, and share the totals.', scan: 'Scan receipt', upload: '⇧\u00a0 Upload receipt', manual: '⌕\u00a0 Enter manually\u00a0 →',
     historyTitle: 'Receipt history', historyBack: '← Back to receipt', historyDescription: 'Records are kept on this browser for 72 hours, then deleted automatically.',
     emptyHistory: 'No saved receipts yet. Finish splitting a bill and it will appear here.', loadingHistory: 'Loading your receipts…', view: 'View receipt', remove: 'Delete',
     expires: 'Expires in', saved: 'Saved to History for 72 hours.', receipt: 'Receipt', review: 'Review', people: 'People', split: 'Split', summary: 'Summary',
   },
   zh: {
     splitNav: '分摊账单', history: '↶\u00a0 历史记录', hero: '轻松分账。<br><em>只付自己吃的。</em>',
-    intro: '添加收据、选择每个人吃了什么，然后分享账单。', scan: '▣\u00a0 扫描收据', upload: '⇧\u00a0 上传收据', manual: '⌕\u00a0 手动输入\u00a0 →',
+    intro: '添加收据、选择每个人吃了什么，然后分享账单。', scan: '扫描收据', upload: '⇧\u00a0 上传收据', manual: '⌕\u00a0 手动输入\u00a0 →',
     historyTitle: '收据历史记录', historyBack: '← 返回账单', historyDescription: '记录会保存在这个浏览器 72 小时，之后自动删除。',
     emptyHistory: '还没有保存的收据。完成一次分账后，记录会出现在这里。', loadingHistory: '正在读取历史记录…', view: '查看账单', remove: '删除',
     expires: '剩余', saved: '已保存到历史记录，有效期 72 小时。', receipt: '收据', review: '检查', people: '人员', split: '分账', summary: '结果',
@@ -298,7 +308,7 @@ function applyLanguage(): void {
   historyNav.innerHTML = c('history');
   hero.querySelector('h1')!.innerHTML = c('hero');
   hero.querySelector<HTMLParagraphElement>('.intro')!.textContent = c('intro');
-  scanHero.innerHTML = c('scan');
+  scanHero.innerHTML = `${cameraIcon}<span>${c('scan')}</span>`;
   uploadHero.innerHTML = c('upload');
   manualHero.innerHTML = c('manual');
   historyBack.textContent = c('historyBack');
@@ -870,16 +880,32 @@ function startScanProgress(): void {
     'Checking items against the totals…',
   ];
   let index = 0;
+  scanProgress = 8;
+  scanButton.style.setProperty('--scan-progress', `${scanProgress}%`);
+  scanButton.querySelector<HTMLElement>('.scan-button-label')!.textContent = messages[index] ?? 'Reading receipt…';
+  scanButton.querySelector<HTMLElement>('.scan-button-percent')!.textContent = `${scanProgress}%`;
   status.textContent = messages[index] ?? 'Reading receipt…';
   scanProgressTimer = window.setInterval(() => {
-    index = Math.min(index + 1, messages.length - 1);
+    scanProgress = Math.min(scanProgress + (scanProgress < 55 ? 9 : scanProgress < 80 ? 5 : 2), 94);
+    index = Math.min(Math.floor(scanProgress / 25), messages.length - 1);
     status.textContent = messages[index] ?? 'Reading receipt…';
-  }, 1400);
+    scanButton.style.setProperty('--scan-progress', `${scanProgress}%`);
+    scanButton.querySelector<HTMLElement>('.scan-button-label')!.textContent = messages[index] ?? 'Reading receipt…';
+    scanButton.querySelector<HTMLElement>('.scan-button-percent')!.textContent = `${scanProgress}%`;
+  }, 650);
 }
 
 function stopScanProgress(): void {
   if (scanProgressTimer !== null) window.clearInterval(scanProgressTimer);
   scanProgressTimer = null;
+}
+
+function resetScanButton(): void {
+  scanProgress = 0;
+  scanButton.classList.remove('is-scanning');
+  scanButton.style.removeProperty('--scan-progress');
+  scanButton.querySelector<HTMLElement>('.scan-button-label')!.textContent = 'Read receipt';
+  scanButton.querySelector<HTMLElement>('.scan-button-percent')!.textContent = '';
 }
 
 input.addEventListener('change', () => {
@@ -895,11 +921,16 @@ scanButton.addEventListener('click', async () => {
   if (!prepared) return;
   controller = new AbortController();
   scanButton.disabled = true;
-  scanButton.textContent = 'Reading receipt…';
+  scanButton.classList.add('is-scanning');
   status.className = 'status loading';
   startScanProgress();
   try {
-    renderResult(await scanReceipt(prepared.blob, controller.signal));
+    const result = await scanReceipt(prepared.blob, controller.signal);
+    scanProgress = 100;
+    scanButton.style.setProperty('--scan-progress', '100%');
+    scanButton.querySelector<HTMLElement>('.scan-button-label')!.textContent = 'Receipt ready';
+    scanButton.querySelector<HTMLElement>('.scan-button-percent')!.textContent = '100%';
+    renderResult(result);
   } catch (error) {
     if (error instanceof DOMException && error.name === 'AbortError') return;
     status.className = 'status error';
@@ -907,7 +938,7 @@ scanButton.addEventListener('click', async () => {
   } finally {
     stopScanProgress();
     scanButton.disabled = false;
-    scanButton.textContent = 'Read receipt';
+    window.setTimeout(resetScanButton, 500);
     controller = null;
   }
 });
