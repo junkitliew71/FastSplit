@@ -82,10 +82,10 @@ app.innerHTML = `
     <section class="scanner hidden" aria-labelledby="scan-title">
       <button id="scanner-back" class="history-back" type="button">‹&nbsp; Back</button>
       <nav id="wizard" class="wizard" aria-label="Bill steps">
-        <button class="active" data-step="1" type="button"><span>1</span>Receipt</button>
-        <button data-step="2" type="button"><span>2</span>People</button>
-        <button data-step="3" type="button"><span>3</span>Split</button>
-        <button data-step="4" type="button"><span>4</span>Summary</button>
+        <button class="active" data-step="1" data-mobile-label="Scan" type="button"><span>1</span>Receipt</button>
+        <button data-step="2" data-mobile-label="People" type="button"><span>2</span>People</button>
+        <button data-step="3" data-mobile-label="Assign" type="button"><span>3</span>Split</button>
+        <button data-step="4" data-mobile-label="Summary" type="button"><span>4</span>Summary</button>
       </nav>
       <div id="receipt-step" class="workflow-step">
       <p class="step">BRING THE BILL</p>
