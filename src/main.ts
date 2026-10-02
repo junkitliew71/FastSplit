@@ -16,6 +16,7 @@ import { prepareReceiptImage, type PreparedImage } from './image.ts';
 import { deleteReceiptHistory, getReceiptHistory, listReceiptHistory, saveReceiptHistory } from './firebase-history.ts';
 import { createHistoryRecord, type ReceiptHistoryRecord } from './receipt-history-model.ts';
 import { deleteLocalHistory, getLocalHistory, listLocalHistory, saveLocalHistory } from './local-history.ts';
+import { deletePaymentQr, loadPaymentQr, savePaymentQr, type PaymentQrRecord } from './payment-qr.ts';
 import {
   assignDetection,
   clearTarget,
@@ -75,6 +76,16 @@ app.innerHTML = `
         <button id="upload-hero" class="hero-secondary" type="button">⇧&nbsp; Upload receipt</button>
       </div>
       <button id="manual-hero" class="manual-link" type="button">⌕&nbsp; Enter manually&nbsp; →</button>
+      <details id="payment-qr-settings" class="payment-qr-settings">
+        <summary><span class="payment-qr-symbol">▦</span><span><strong>Payment QR</strong><small>Add your payment code to bill shares</small></span><b id="payment-qr-state">Set up →</b></summary>
+        <div class="payment-qr-body">
+          <div id="payment-qr-empty" class="payment-qr-empty"><strong>Upload your payment QR</strong><span>DuitNow, bank or e-wallet QR · saved only on this device</span></div>
+          <img id="payment-qr-preview" class="payment-qr-preview hidden" alt="Your payment QR code" />
+          <input id="payment-qr-input" class="hidden" type="file" accept="image/png,image/jpeg,image/webp" />
+          <div class="payment-qr-actions"><button id="payment-qr-upload" class="secondary" type="button">Upload QR image</button><button id="payment-qr-delete" class="qr-delete hidden" type="button">Remove</button></div>
+          <p id="payment-qr-feedback" class="save-message" aria-live="polite"></p>
+        </div>
+      </details>
       <div class="how-it-works" aria-label="How FastSplit works">
         <div><span>1</span><strong>Add receipt</strong><small>Take a photo or upload one</small></div>
         <div><span>2</span><strong>Add diners</strong><small>Add everyone sharing the bill</small></div>
@@ -162,6 +173,11 @@ app.innerHTML = `
         <div id="final-total" class="final-total"></div>
         <div id="person-totals" class="person-totals"></div>
         <div id="allocation-check" class="allocation-check"></div>
+        <section id="payment-qr-share" class="payment-qr-share hidden" aria-labelledby="payment-qr-share-title">
+          <div><p class="step">PAYMENT</p><h3 id="payment-qr-share-title">Scan to pay</h3><span>This QR image will be attached when you share.</span></div>
+          <img id="payment-qr-share-image" alt="Payment QR code" />
+          <a id="payment-qr-download" class="qr-download" download="fastsplit-payment-qr.png">Save QR image</a>
+        </section>
         <button id="share-result" class="primary share-result" type="button">⌯&nbsp; Share result</button>
         <p id="history-saved-message" class="save-message" aria-live="polite"></p>
         <p id="share-message" class="save-message" aria-live="polite"></p>
@@ -239,6 +255,17 @@ const historyDescription = document.querySelector<HTMLParagraphElement>('#histor
 const historySavedMessage = document.querySelector<HTMLParagraphElement>('#history-saved-message')!;
 const langEn = document.querySelector<HTMLButtonElement>('#lang-en')!;
 const langZh = document.querySelector<HTMLButtonElement>('#lang-zh')!;
+const paymentQrSettings = document.querySelector<HTMLDetailsElement>('#payment-qr-settings')!;
+const paymentQrState = document.querySelector<HTMLElement>('#payment-qr-state')!;
+const paymentQrEmpty = document.querySelector<HTMLElement>('#payment-qr-empty')!;
+const paymentQrInput = document.querySelector<HTMLInputElement>('#payment-qr-input')!;
+const paymentQrUpload = document.querySelector<HTMLButtonElement>('#payment-qr-upload')!;
+const paymentQrDelete = document.querySelector<HTMLButtonElement>('#payment-qr-delete')!;
+const paymentQrPreview = document.querySelector<HTMLImageElement>('#payment-qr-preview')!;
+const paymentQrFeedback = document.querySelector<HTMLParagraphElement>('#payment-qr-feedback')!;
+const paymentQrShare = document.querySelector<HTMLElement>('#payment-qr-share')!;
+const paymentQrShareImage = document.querySelector<HTMLImageElement>('#payment-qr-share-image')!;
+const paymentQrDownload = document.querySelector<HTMLAnchorElement>('#payment-qr-download')!;
 
 const input = document.querySelector<HTMLInputElement>('#receipt-input')!;
 const uploadInput = document.querySelector<HTMLInputElement>('#upload-input')!;
@@ -278,6 +305,8 @@ let currentStep = 1;
 let manualMode = false;
 let scanProgressTimer: number | null = null;
 let scanProgress = 0;
+let paymentQr: PaymentQrRecord | null = null;
+let paymentQrObjectUrl = '';
 type Locale = 'en' | 'zh';
 let locale: Locale = localStorage.getItem('fastsplit:language') === 'zh' ? 'zh' : 'en';
 
@@ -781,6 +810,50 @@ function renderFinalSummary(): void {
   finalTotal.innerHTML = `<span>${locale === 'zh' ? '每个人应付金额已计算完成。' : 'Everyone’s share, sorted.'}</span><strong>${formatMoney(grand)}</strong><small>${locale === 'zh' ? `${people.length} 人 · ${reviewModel.items.length} 个项目` : `${people.length} people · ${reviewModel.items.length} items`}</small>`;
   personTotals.innerHTML = shares.map((person) => `<article><span>${escapeHtml(person.name.charAt(0).toUpperCase())}</span><strong>${escapeHtml(person.name)}</strong><b>${formatMoney(person.amountCents)}</b></article>`).join('');
   allocationCheck.innerHTML = `<div><span>${locale === 'zh' ? '账单总额' : 'Bill total'}</span><strong>${formatMoney(grand)}</strong></div><div><span>${locale === 'zh' ? '已分配' : 'Allocated'}</span><strong>${formatMoney(allocated)}</strong></div><div class="${allocated === grand ? 'balanced' : 'unbalanced'}"><span>${allocated === grand ? `✓ ${locale === 'zh' ? '差额' : 'Difference'}` : `△ ${locale === 'zh' ? '差额' : 'Difference'}`}</span><strong>${formatMoney(grand - allocated)}</strong></div>`;
+  renderPaymentQr();
+}
+
+function renderPaymentQr(): void {
+  if (paymentQrObjectUrl) URL.revokeObjectURL(paymentQrObjectUrl);
+  paymentQrObjectUrl = paymentQr ? URL.createObjectURL(paymentQr.blob) : '';
+  paymentQrState.textContent = paymentQr ? 'Ready ✓' : 'Set up →';
+  paymentQrEmpty.classList.toggle('hidden', Boolean(paymentQr));
+  paymentQrPreview.classList.toggle('hidden', !paymentQr);
+  paymentQrDelete.classList.toggle('hidden', !paymentQr);
+  paymentQrUpload.textContent = paymentQr ? 'Replace QR image' : 'Upload QR image';
+  paymentQrShare.classList.toggle('hidden', !paymentQr);
+  shareResult.textContent = paymentQr ? '⌯  Share bill + payment QR' : '⌯  Share result';
+  if (!paymentQr || !paymentQrObjectUrl) return;
+  paymentQrPreview.src = paymentQrObjectUrl;
+  paymentQrShareImage.src = paymentQrObjectUrl;
+  paymentQrDownload.href = paymentQrObjectUrl;
+  paymentQrDownload.download = paymentQr.name || 'fastsplit-payment-qr.png';
+}
+
+async function setPaymentQr(file: File): Promise<void> {
+  paymentQrFeedback.textContent = '';
+  if (!file.type.startsWith('image/')) {
+    paymentQrFeedback.textContent = 'Choose a PNG, JPG or WebP image.';
+    return;
+  }
+  if (file.size > 8 * 1024 * 1024) {
+    paymentQrFeedback.textContent = 'QR image must be smaller than 8 MB.';
+    return;
+  }
+  paymentQrUpload.disabled = true;
+  paymentQrFeedback.textContent = 'Saving QR on this device…';
+  try {
+    await savePaymentQr(file);
+    paymentQr = await loadPaymentQr() ?? null;
+    renderPaymentQr();
+    paymentQrFeedback.textContent = 'Payment QR saved. It will be attached to future bill shares.';
+    paymentQrSettings.open = true;
+  } catch {
+    paymentQrFeedback.textContent = 'Could not save this QR image. Try a smaller image.';
+  } finally {
+    paymentQrUpload.disabled = false;
+    paymentQrInput.value = '';
+  }
 }
 
 function saveCompletedSplit(): void {
@@ -825,18 +898,33 @@ async function shareBillResult(): Promise<void> {
   if (!text) return;
   shareMessage.textContent = '';
   try {
+    if (paymentQr) {
+      const qrFile = new File([paymentQr.blob], paymentQr.name || 'fastsplit-payment-qr.png', { type: paymentQr.blob.type || 'image/png' });
+      const shareWithQr: ShareData = { title: 'FastSplit bill', text, files: [qrFile] };
+      if (navigator.share && navigator.canShare?.(shareWithQr)) {
+        await navigator.share(shareWithQr);
+        shareMessage.textContent = 'Bill text and payment QR shared.';
+        return;
+      }
+    }
     if (navigator.share) {
       await navigator.share({ title: 'FastSplit bill', text });
-      shareMessage.textContent = 'Share sheet opened.';
+      shareMessage.textContent = paymentQr
+        ? 'This browser shared the bill text only. Use “Save QR image” to send the QR separately.'
+        : 'Share sheet opened.';
     } else {
       await navigator.clipboard.writeText(text);
-      shareMessage.textContent = 'Bill copied as text. Paste it into WhatsApp or your messaging app.';
+      shareMessage.textContent = paymentQr
+        ? 'Bill copied as text. Save the QR image above and attach it in your messaging app.'
+        : 'Bill copied as text. Paste it into WhatsApp or your messaging app.';
     }
   } catch (error) {
     if (error instanceof DOMException && error.name === 'AbortError') return;
     try {
       await navigator.clipboard.writeText(text);
-      shareMessage.textContent = 'Bill copied as text. Paste it into WhatsApp or your messaging app.';
+      shareMessage.textContent = paymentQr
+        ? 'Bill copied as text. Save the QR image above and attach it in your messaging app.'
+        : 'Bill copied as text. Paste it into WhatsApp or your messaging app.';
     } catch {
       shareMessage.textContent = 'Could not open sharing. Please try again.';
     }
@@ -1038,6 +1126,25 @@ splitContinue.addEventListener('click', () => {
 });
 startOver.addEventListener('click', () => { reset(); scannerSection.classList.add('hidden'); hero.classList.remove('hidden'); });
 shareResult.addEventListener('click', () => void shareBillResult());
+paymentQrUpload.addEventListener('click', () => paymentQrInput.click());
+paymentQrInput.addEventListener('change', () => {
+  const file = paymentQrInput.files?.[0];
+  if (file) void setPaymentQr(file);
+});
+paymentQrDelete.addEventListener('click', async () => {
+  if (!window.confirm('Remove the payment QR saved on this device?')) return;
+  paymentQrDelete.disabled = true;
+  try {
+    await deletePaymentQr();
+    paymentQr = null;
+    renderPaymentQr();
+    paymentQrFeedback.textContent = 'Payment QR removed.';
+  } catch {
+    paymentQrFeedback.textContent = 'Could not remove the QR image.';
+  } finally {
+    paymentQrDelete.disabled = false;
+  }
+});
 wizard.addEventListener('click', (event) => {
   const button = (event.target as HTMLElement).closest<HTMLButtonElement>('[data-step]');
   const target = Number(button?.dataset.step ?? 0);
@@ -1166,3 +1273,9 @@ langZh.addEventListener('click', () => setLanguage('zh'));
 // FastSplit now opens directly without an authentication gate.
 enterApplication(enableGuestMode(localStorage));
 applyLanguage();
+void loadPaymentQr().then((saved) => {
+  paymentQr = saved ?? null;
+  renderPaymentQr();
+}).catch(() => {
+  paymentQrFeedback.textContent = 'Payment QR storage is unavailable in this browser.';
+});
