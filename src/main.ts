@@ -41,10 +41,12 @@ const cameraIcon = `
     <circle cx="12" cy="13" r="3.5"/>
   </svg>`;
 
+const homeUrl = import.meta.env.BASE_URL;
+
 app.innerHTML = `
   <section id="auth-gate" class="auth-gate hidden" aria-labelledby="auth-title">
     <div class="auth-card">
-      <a class="brand auth-brand" href="/" aria-label="FastSplit home">${receiptLogo}<b>FastSplit</b></a>
+      <a class="brand auth-brand" href="${homeUrl}" aria-label="FastSplit home">${receiptLogo}<b>FastSplit</b></a>
       <p class="eyebrow">WELCOME TO FASTSPLIT</p>
       <h1 id="auth-title">Split together.<br><em>Settle simply.</em></h1>
       <p class="intro">Sign in to keep your account ready across devices, or continue as a guest to split a bill now.</p>
@@ -55,7 +57,7 @@ app.innerHTML = `
     </div>
   </section>
   <header class="topbar">
-    <a class="brand" href="/" aria-label="FastSplit home">${receiptLogo}<b>FastSplit</b></a>
+    <a class="brand" href="${homeUrl}" aria-label="FastSplit home">${receiptLogo}<b>FastSplit</b></a>
     <div class="topbar-actions">
       <div class="lang" aria-label="Language"><button id="lang-en" class="active" type="button">EN</button><button id="lang-zh" type="button">中文</button></div>
       <button id="split-nav" class="header-link" type="button">Split a bill</button>

@@ -223,29 +223,59 @@ footer strong { color: #547268; font-size: 24px; }
 @keyframes step-pop { 0% { transform: scale(.82); } 70% { transform: scale(1.08); } 100% { transform: scale(1); } }
 @keyframes progress-shimmer { from { background-position: 120% 0; } to { background-position: -120% 0; } }
 @media (max-width: 760px) {
+  body { background: #fcfcfa; }
+  main { width: min(100% - 24px,560px); }
   .workspace { grid-template-columns: 1fr; }
   .section-heading { align-items: start; flex-direction: column; }
-  .hero { padding-top: 54px; }
+  .hero { min-height: auto; padding: 52px 0 38px; }
+  .hero h1 { max-width: 350px; margin: 8px 0 18px; font-size: clamp(39px,12vw,52px); line-height: 1.02; }
+  .hero .intro { max-width: 340px; margin-bottom: 22px; font-size: 16px; line-height: 1.55; }
   .preview-column { position: sticky; top: 6px; z-index: 4; max-height: 48vh; overflow: auto; border-radius: 18px; }
   .mapping-field { min-height: 76px; }
-  .topbar { height: auto; min-height: 72px; gap: 10px; padding-top: 10px; padding-bottom: 10px; }
-  .topbar-actions { align-items: end; flex-direction: column-reverse; gap: 5px; }
-  .account-chip #account-name { max-width: 78px; }
+  .topbar { width: calc(100% - 24px); height: auto; min-height: 68px; gap: 8px; padding: 8px 0; }
+  .brand { gap: 4px; font-size: 19px; }
+  .brand .receipt-logo { width: 38px; height: 38px; }
+  .brand .receipt-logo img { width: 77px; height: 77px; left: -19px; top: -20px; }
+  .topbar-actions { min-width: 0; align-items: center; flex-direction: row; gap: 4px; }
+  .history-nav { min-height: 40px; padding: 0 7px; font-size: 12px; }
+  .lang { flex: 0 0 auto; padding: 3px; }
+  .lang button { min-height: 32px; padding: 5px 8px; }
+  .account-chip #account-name { display: none; }
+  .account-chip { gap: 2px; padding-right: 2px; }
+  .account-chip button { padding: 0 6px; }
   .history-card { grid-template-columns: 1fr auto; }
   .hero-actions { width: 100%; flex-direction: column; }
   .how-it-works { grid-template-columns: 1fr; }
-  .how-it-works > div { padding: 11px 14px; }
-  .hero-primary,.hero-secondary { width: 100%; }
+  .how-it-works > div { min-height: 66px; align-items: center; padding: 11px 14px; }
+  .hero-primary,.hero-secondary { width: 100%; min-height: 54px; }
+  .manual-link { min-height: 44px; margin-top: 10px; padding: 8px 14px; }
   .header-link { display: none; }
-  .wizard { gap: 4px; margin-bottom: 34px; }
-  .wizard button { min-width: 0; justify-content: center; gap: 5px; font-size: 0; white-space: nowrap; }
-  .wizard button::after { content: attr(data-mobile-label); overflow: hidden; text-overflow: ellipsis; font-size: clamp(9px,2.7vw,11px); }
-  .wizard button span { font-size: 11px; }
+  .scanner { padding: 22px 0 64px; }
+  .scanner > .history-back { min-height: 40px; margin-bottom: 12px; }
+  .wizard { position: sticky; z-index: 6; top: 0; grid-template-columns: repeat(4,minmax(0,1fr)); gap: 2px; margin: 0 -4px 28px; padding: 10px 4px; border-bottom: 1px solid #e7ebe7; background: rgba(252,252,250,.94); backdrop-filter: blur(10px); }
+  .wizard button { min-width: 0; justify-content: center; gap: 4px; font-size: 0; white-space: nowrap; }
+  .wizard button::after { content: attr(data-mobile-label); flex: 0 1 auto; font-size: 10px; letter-spacing: -.02em; }
+  .wizard button span { width: 24px; height: 24px; flex: 0 0 24px; font-size: 10px; }
+  .section-heading h2,.workflow-step > h2 { font-size: clamp(32px,10vw,42px); }
+  .dropzone { min-height: 250px; padding: 28px 18px; border-radius: 16px; }
+  .dropzone strong { font-size: 17px; }
+  .scan-tips { justify-content: start; gap: 7px 12px; margin-bottom: 18px; }
+  .result-panel { padding: 18px 14px; border: 1px solid #e8e8e2; border-radius: 16px; }
+  .primary,.secondary { min-height: 50px; }
   .assignment-card { grid-template-columns: 1fr; }
   .assignment-progress { flex-direction: column; gap: 4px; }
   .manual-item { grid-template-columns: repeat(2,1fr); }
   .manual-name { grid-column: 1 / -1; }
   .manual-totals { grid-template-columns: repeat(2,1fr); }
+  footer { width: calc(100% - 24px); padding: 22px 0; }
+  footer strong { font-size: 20px; }
+}
+@media (max-width: 370px) {
+  .brand b { font-size: 17px; }
+  .history-nav { font-size: 0; }
+  .history-nav::first-letter { font-size: 17px; }
+  .wizard button { flex-direction: column; gap: 2px; }
+  .wizard button::after { font-size: 9px; }
 }
 @media (prefers-reduced-motion: reduce) {
   *,*::before,*::after { scroll-behavior: auto !important; animation-duration: .01ms !important; animation-iteration-count: 1 !important; transition-duration: .01ms !important; }
