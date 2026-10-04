@@ -1,4 +1,4 @@
-const DEFAULT_MODEL = 'gemini-2.5-flash';
+const DEFAULT_MODELS = ['gemini-2.5-flash', 'gemini-3.1-flash-lite'];
 
 function doGet() {
   return jsonOutput({ status: 'ok', service: 'FastSplit Google receipt scanner' });
@@ -12,35 +12,67 @@ function doPost(event) {
       return jsonOutput({ error: { code: 'INVALID_IMAGE', message: 'A JPG, PNG, or WebP receipt image is required.' } });
     }
     const properties = PropertiesService.getScriptProperties();
-    const apiKey = properties.getProperty('GEMINI_API_KEY');
-    const model = properties.getProperty('GEMINI_MODEL') || DEFAULT_MODEL;
-    if (!apiKey) throw new Error('GEMINI_API_KEY is missing from Script Properties.');
-
-    const endpoint = 'https://generativelanguage.googleapis.com/v1beta/models/'
-      + encodeURIComponent(model) + ':generateContent?key=' + encodeURIComponent(apiKey);
-    const payload = {
-      contents: [{ role: 'user', parts: [
-        { text: receiptPrompt() },
-        { inline_data: { mime_type: request.mimeType, data: request.imageBase64 } },
-      ] }],
-      generationConfig: {
-        temperature: 0,
-        responseMimeType: 'application/json',
-      },
-    };
-    const response = UrlFetchApp.fetch(endpoint, {
-      method: 'post', contentType: 'application/json', payload: JSON.stringify(payload), muteHttpExceptions: true,
-    });
-    if (response.getResponseCode() < 200 || response.getResponseCode() >= 300) {
-      throw new Error('Google AI request failed (' + response.getResponseCode() + ').');
-    }
-    const gemini = JSON.parse(response.getContentText());
-    const text = gemini.candidates && gemini.candidates[0] && gemini.candidates[0].content.parts[0].text;
-    if (!text) throw new Error('Google AI returned an empty receipt result.');
-    return jsonOutput(toFastSplitResponse(JSON.parse(text), Date.now() - started));
+    const result = scanWithFallback(request, properties);
+    return jsonOutput(toFastSplitResponse(result.data, Date.now() - started, result.provider));
   } catch (error) {
-    return jsonOutput({ error: { code: 'GOOGLE_OCR_ERROR', message: String(error.message || error) } });
+    return jsonOutput({ error: { code: 'AI_OCR_ERROR', message: String(error.message || error) } });
   }
+}
+
+function scanWithFallback(request, properties) {
+  const geminiKey = properties.getProperty('GEMINI_API_KEY');
+  if (!geminiKey) throw new Error('Add GEMINI_API_KEY to Script Properties.');
+
+  const configuredModels = properties.getProperty('GEMINI_MODELS');
+  const legacyModel = properties.getProperty('GEMINI_MODEL');
+  const models = configuredModels
+    ? configuredModels.split(',').map(function(model) { return model.trim(); }).filter(Boolean)
+    : (legacyModel ? [legacyModel].concat(DEFAULT_MODELS.filter(function(model) { return model !== legacyModel; })) : DEFAULT_MODELS);
+
+  const failures = [];
+  for (let index = 0; index < models.length; index += 1) {
+    try {
+      return { provider: models[index], data: scanWithGemini(request, geminiKey, models[index]) };
+    } catch (error) {
+      failures.push(models[index] + ': ' + String(error.message || error));
+    }
+  }
+  throw new Error('Every configured free Gemini model failed. ' + failures.join(' | '));
+}
+
+function scanWithGemini(request, apiKey, model) {
+  const endpoint = 'https://generativelanguage.googleapis.com/v1beta/models/'
+    + encodeURIComponent(model) + ':generateContent?key=' + encodeURIComponent(apiKey);
+  const payload = {
+    contents: [{ role: 'user', parts: [
+      { text: receiptPrompt() },
+      { inline_data: { mime_type: request.mimeType, data: request.imageBase64 } },
+    ] }],
+    generationConfig: { temperature: 0, responseMimeType: 'application/json' },
+  };
+  const response = fetchJson(endpoint, payload, {});
+  const text = response.candidates && response.candidates[0] && response.candidates[0].content.parts[0].text;
+  if (!text) throw new Error('returned an empty receipt result');
+  return parseAiJson(text);
+}
+
+function fetchJson(url, payload, headers) {
+  const response = UrlFetchApp.fetch(url, {
+    method: 'post',
+    contentType: 'application/json',
+    headers: headers,
+    payload: JSON.stringify(payload),
+    muteHttpExceptions: true,
+  });
+  const status = response.getResponseCode();
+  const body = response.getContentText();
+  if (status < 200 || status >= 300) throw new Error('request failed (' + status + ')');
+  return JSON.parse(body);
+}
+
+function parseAiJson(text) {
+  const cleaned = String(text).trim().replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/, '');
+  return JSON.parse(cleaned);
 }
 
 function receiptPrompt() {
@@ -75,7 +107,7 @@ function receiptSchema() {
   };
 }
 
-function toFastSplitResponse(data, elapsedMs) {
+function toFastSplitResponse(data, elapsedMs, provider) {
   const confidence = Number(data.confidence) || 0;
   const needsReview = data.needsReview !== false;
   const detections = (data.detections || []).map(function(item, index) {
@@ -110,7 +142,8 @@ function toFastSplitResponse(data, elapsedMs) {
         grandTotalChecked: summary.grandTotalCents != null, grandTotalValid: summary.grandTotalCents == null ? null : Math.abs(expected - summary.grandTotalCents) <= 1 },
       confidence: confidence, needsReview: needsReview,
     },
-    timingsMs: { googleAi: elapsedMs, total: elapsedMs }, cacheHit: false, needsReview: needsReview, message: null,
+    timingsMs: { ai: elapsedMs, total: elapsedMs }, cacheHit: false, needsReview: needsReview,
+    message: 'Scanned with ' + provider + '.', aiProvider: provider,
   };
 }
 
