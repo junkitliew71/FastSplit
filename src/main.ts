@@ -148,14 +148,14 @@ app.innerHTML = `
       <section id="manual-step" class="workflow-step hidden">
         <p class="step">ENTER THE BILL</p><h2>Enter receipt manually</h2>
         <p class="scanner-copy">Add each item exactly as it appears on the bill.</p>
-        <label class="manual-restaurant">Restaurant<input id="manual-restaurant" placeholder="Restaurant name"></label>
+        <label class="manual-restaurant"><span>Restaurant</span><input id="manual-restaurant" placeholder="Restaurant name"></label>
         <div id="manual-items" class="manual-items"></div>
         <button id="manual-add-item" class="secondary" type="button">＋ Add item</button>
         <div class="manual-totals">
-          <label>Service charge<input id="manual-service" type="number" min="0" step="0.01" value="0.00"></label>
-          <label>SST / GST<input id="manual-tax" type="number" min="0" step="0.01" value="0.00"></label>
-          <label>Discount<input id="manual-discount" type="number" min="0" step="0.01" value="0.00"></label>
-          <label>Rounding<input id="manual-rounding" type="number" step="0.01" value="0.00"></label>
+          <label><span>Service charge</span><input id="manual-service" type="number" min="0" step="0.01" value="0.00"></label>
+          <label><span>SST / GST</span><input id="manual-tax" type="number" min="0" step="0.01" value="0.00"></label>
+          <label><span>Discount</span><input id="manual-discount" type="number" min="0" step="0.01" value="0.00"></label>
+          <label><span>Rounding</span><input id="manual-rounding" type="number" step="0.01" value="0.00"></label>
         </div>
         <div id="manual-calculated" class="manual-calculated"></div>
         <button id="manual-continue" class="primary" type="button">Confirm receipt →</button>
@@ -332,12 +332,18 @@ function c(key: keyof typeof copy.en): string {
 }
 
 function applyLanguage(): void {
+  const zh = locale === 'zh';
+  const setText = (selector: string, en: string, chinese: string): void => {
+    const element = document.querySelector<HTMLElement>(selector);
+    if (element) element.textContent = zh ? chinese : en;
+  };
   document.documentElement.lang = locale === 'zh' ? 'zh-CN' : 'en';
   langEn.classList.toggle('active', locale === 'en');
   langZh.classList.toggle('active', locale === 'zh');
   splitNav.textContent = c('splitNav');
   historyNav.innerHTML = c('history');
   hero.querySelector('h1')!.innerHTML = c('hero');
+  document.querySelector<HTMLElement>('#auth-title')!.innerHTML = zh ? '一起分账。<br><em>轻松结清。</em>' : 'Split together.<br><em>Settle simply.</em>';
   hero.querySelector<HTMLParagraphElement>('.intro')!.textContent = c('intro');
   scanHero.innerHTML = `${cameraIcon}<span>${c('scan')}</span>`;
   uploadHero.innerHTML = c('upload');
@@ -346,16 +352,98 @@ function applyLanguage(): void {
   document.querySelector<HTMLElement>('#history-title')!.textContent = c('historyTitle');
   historyDescription.textContent = c('historyDescription');
   const wizardLabels = [c('receipt'), c('people'), c('split'), c('summary')];
+  const mobileLabels = zh ? ['扫描', '人员', '分配', '结果'] : ['Scan', 'People', 'Assign', 'Summary'];
   wizard.querySelectorAll<HTMLButtonElement>('[data-step]').forEach((button, index) => {
     const number = button.querySelector('span')?.outerHTML ?? `<span>${index + 1}</span>`;
     button.innerHTML = `${number}${wizardLabels[index] ?? ''}`;
+    button.dataset.mobileLabel = mobileLabels[index] ?? '';
+  });
+  const staticCopy: Array<[string, string, string]> = [
+    ['#auth-gate .eyebrow', 'WELCOME TO FASTSPLIT', '欢迎使用 FASTSPLIT'],
+    ['#auth-gate .intro', 'Sign in to keep your account ready across devices, or continue as a guest to split a bill now.', '登录即可跨设备使用账户，或以访客身份立即开始分账。'],
+    ['#google-login', 'Continue with Google', '使用 Google 继续'],
+    ['#guest-login', 'Continue as Guest', '以访客身份继续'],
+    ['#logout-button', 'Log out', '登出'],
+    ['#payment-qr-settings summary strong', 'Payment QR', '收款二维码'],
+    ['#payment-qr-settings summary small', 'Add your payment code to bill shares', '分享账单时附上你的收款码'],
+    ['#payment-qr-empty strong', 'Upload your payment QR', '上传你的收款二维码'],
+    ['#payment-qr-empty span', 'DuitNow, bank or e-wallet QR · saved only on this device', '支持 DuitNow、银行或电子钱包二维码 · 仅保存在此设备'],
+    ['.how-it-works > div:nth-child(1) strong', 'Add receipt', '添加收据'],
+    ['.how-it-works > div:nth-child(1) small', 'Take a photo or upload one', '拍照或上传收据'],
+    ['.how-it-works > div:nth-child(2) strong', 'Add diners', '添加用餐者'],
+    ['.how-it-works > div:nth-child(2) small', 'Add everyone sharing the bill', '添加所有参与分账的人'],
+    ['.how-it-works > div:nth-child(3) strong', 'Share totals', '分享金额'],
+    ['.how-it-works > div:nth-child(3) small', 'Send a clear text breakdown', '发送清楚的文字账单明细'],
+    ['#scanner-back', '‹  Back', '‹  返回'],
+    ['#receipt-step > .step', 'BRING THE BILL', '添加账单'],
+    ['#scan-title', 'Scan your receipt', '扫描收据'],
+    ['#receipt-step .section-heading .scanner-copy', 'Keep the whole receipt in frame, with readable prices.', '请确保整张收据完整入镜，并能清楚看见价格。'],
+    ['#receipt-step .privacy', 'Processed privately', '私密处理'],
+    ['#dropzone strong', 'Take a photo or choose a receipt', '拍照或选择收据'],
+    ['#dropzone > small', 'JPG, PNG, WebP · large photos are resized before upload', '支持 JPG、PNG、WebP · 大图会在上传前自动缩小'],
+    ['.scan-tips span:nth-child(1)', '✓ Show all four receipt edges', '✓ 显示收据四个边角'],
+    ['.scan-tips span:nth-child(2)', '✓ Avoid shadows and glare', '✓ 避免阴影和反光'],
+    ['.scan-tips span:nth-child(3)', '✓ Keep prices sharp and readable', '✓ 确保价格清晰可读'],
+    ['#scan-button .scan-button-label', 'Read receipt', '读取收据'],
+    ['#cancel-button', 'Choose another', '选择其他收据'],
+    ['#status', 'Ready to scan', '准备扫描'],
+    ['#review .step', '02 · REVIEW RECEIPT', '02 · 检查收据'],
+    ['#review-title', 'Check the receipt', '检查收据内容'],
+    ['#editing-banner span', 'Select a field to correct', '选择要更正的字段'],
+    ['#undo-mapping', 'Undo last mapping', '撤销上次配对'],
+    ['#clear-field', 'Clear field', '清除字段'],
+    ['#confirm-review', 'Confirm receipt →', '确认收据 →'],
+    ['#save-history', 'Save to History', '保存到历史记录'],
+    ['#raw-detections summary', 'Detected OCR text', '检测到的 OCR 文字'],
+    ['#people-step > .step', 'WHO IS SHARING?', '谁一起分账？'],
+    ['#people-step > h2', 'Add people', '添加人员'],
+    ['#people-step > .scanner-copy', 'Add everyone at the table before assigning the food.', '分配餐点前，先添加所有一起用餐的人。'],
+    ['#people-form button', '+ Add person', '+ 添加人员'],
+    ['#manual-step > .step', 'ENTER THE BILL', '输入账单'],
+    ['#manual-step > h2', 'Enter receipt manually', '手动输入收据'],
+    ['#manual-step > .scanner-copy', 'Add each item exactly as it appears on the bill.', '按照账单内容逐项添加。'],
+    ['.manual-restaurant > span', 'Restaurant', '餐厅'],
+    ['.manual-totals label:nth-child(1) span', 'Service charge', '服务费'],
+    ['.manual-totals label:nth-child(2) span', 'SST / GST', 'SST / GST 税费'],
+    ['.manual-totals label:nth-child(3) span', 'Discount', '折扣'],
+    ['.manual-totals label:nth-child(4) span', 'Rounding', '舍入调整'],
+    ['#manual-add-item', '＋ Add item', '＋ 添加项目'],
+    ['#manual-continue', 'Confirm receipt →', '确认收据 →'],
+    ['#split-step > .step', 'WHO HAD WHAT?', '谁吃了什么？'],
+    ['#split-step > h2', 'Split the items', '分配账单项目'],
+    ['#split-step > .scanner-copy', 'Select one or more people for every item. Shared items are divided equally.', '为每个项目选择一人或多人，共享项目会平均分摊。'],
+    ['#final-step > .step', 'ALL SQUARE', '账目结清'],
+    ['#final-step > h2', 'Good food. Fair split.', '吃得开心，分得公平。'],
+    ['#payment-qr-share .step', 'PAYMENT', '付款'],
+    ['#payment-qr-share-title', 'Scan to pay', '扫码付款'],
+    ['#payment-qr-share span', 'This QR image will be attached when you share.', '分享时会附上这张收款二维码。'],
+    ['#payment-qr-download', 'Save QR image', '保存二维码图片'],
+    ['#payment-qr-delete', 'Remove', '移除'],
+    ['#start-over', 'Split another bill', '分摊另一张账单'],
+    ['#history-view .eyebrow', 'YOUR SAVED RECEIPTS', '已保存的收据'],
+    ['#app-footer span', 'Made for meals, not maths.', '专注聚餐，不为算数烦恼。'],
+  ];
+  staticCopy.forEach(([selector, en, chinese]) => setText(selector, en, chinese));
+  personName.placeholder = zh ? '姓名' : 'Name';
+  manualRestaurant.placeholder = zh ? '餐厅名称' : 'Restaurant name';
+  if (currentIdentity?.mode === 'guest') accountName.textContent = zh ? '访客模式' : 'Guest Mode';
+  manualItems.querySelectorAll<HTMLElement>('.manual-item').forEach((row) => {
+    const labels = row.querySelectorAll<HTMLLabelElement>('label');
+    const names = zh ? ['餐点名称', '数量', '单价', '总计'] : ['Food name', 'Quantity', 'Unit price', 'Total'];
+    labels.forEach((label, index) => { if (label.firstChild) label.firstChild.textContent = names[index] ?? ''; });
+    const nameInput = row.querySelector<HTMLInputElement>('[data-field="name"]');
+    if (nameInput) nameInput.placeholder = zh ? '例如：鸡饭' : 'e.g. Chicken rice';
+    const remove = row.querySelector<HTMLButtonElement>('[data-remove-manual]');
+    if (remove) { remove.textContent = zh ? '删除' : 'Delete'; remove.setAttribute('aria-label', zh ? '删除项目' : 'Delete item'); }
   });
   if (!historyView.classList.contains('hidden')) void showHistory();
   if (reviewModel) {
+    if (currentResult) renderReview();
     renderPeople();
     if (currentStep === 3) renderAssignments();
     if (currentStep === 4) renderFinalSummary();
   }
+  renderPaymentQr();
 }
 
 function setLanguage(next: Locale): void {
@@ -434,12 +522,14 @@ function renderResult(result: ReceiptOcrResponse, restoredReview?: ReviewModel):
   const incompleteItems = result.parsed.items.filter((item) => item.needsReview || item.totalCents === null).length;
   status.textContent = result.needsReview
     ? incompleteItems > 0
-      ? `Scan complete — please check ${incompleteItems} ${incompleteItems === 1 ? 'item' : 'items'}. Tap a field, then tap the correct receipt text.`
-      : 'Scan complete — please check the highlighted totals before continuing.'
-    : `Receipt ready — ${result.parsed.items.length} ${result.parsed.items.length === 1 ? 'item' : 'items'} found.`;
+      ? (locale === 'zh' ? `扫描完成——请检查 ${incompleteItems} 个项目。点击字段后，再点击正确的收据文字。` : `Scan complete — please check ${incompleteItems} ${incompleteItems === 1 ? 'item' : 'items'}. Tap a field, then tap the correct receipt text.`)
+      : (locale === 'zh' ? '扫描完成——继续前请检查标记的总额。' : 'Scan complete — please check the highlighted totals before continuing.')
+    : (locale === 'zh' ? `收据已完成——找到 ${result.parsed.items.length} 个项目。` : `Receipt ready — ${result.parsed.items.length} ${result.parsed.items.length === 1 ? 'item' : 'items'} found.`);
   status.className = `status ${result.needsReview ? 'warning' : 'success'}`;
   summary.classList.remove('hidden');
-  summary.innerHTML = `<strong>${result.parsed.items.length} items found · ${result.ocr.detections.length} selectable receipt fields</strong><span>${Math.round(result.ocr.confidence * 100)}% scan confidence · ${Math.round(result.timingsMs.total ?? 0)} ms${result.cacheHit ? ' · reused recent scan' : ''}</span>`;
+  summary.innerHTML = locale === 'zh'
+    ? `<strong>找到 ${result.parsed.items.length} 个项目 · ${result.ocr.detections.length} 个可选收据字段</strong><span>扫描置信度 ${Math.round(result.ocr.confidence * 100)}% · ${Math.round(result.timingsMs.total ?? 0)} ms${result.cacheHit ? ' · 使用近期扫描结果' : ''}</span>`
+    : `<strong>${result.parsed.items.length} items found · ${result.ocr.detections.length} selectable receipt fields</strong><span>${Math.round(result.ocr.confidence * 100)}% scan confidence · ${Math.round(result.timingsMs.total ?? 0)} ms${result.cacheHit ? ' · reused recent scan' : ''}</span>`;
   boxes.replaceChildren();
   detections.replaceChildren();
   currentResult = result;
@@ -484,40 +574,40 @@ function renderReview(): void {
   const itemCards = reviewModel.items.map((item, index) => {
     const itemNumber = String(index + 1).padStart(2, '0');
     const fields: Array<[string, TargetKey]> = [
-      ['Food name', `item:${item.id}:foodName`],
-      ['Quantity', `item:${item.id}:quantity`],
-      ['Unit price', `item:${item.id}:unitPrice`],
-      ['Item total', `item:${item.id}:total`],
+      [locale === 'zh' ? '餐点名称' : 'Food name', `item:${item.id}:foodName`],
+      [locale === 'zh' ? '数量' : 'Quantity', `item:${item.id}:quantity`],
+      [locale === 'zh' ? '单价' : 'Unit price', `item:${item.id}:unitPrice`],
+      [locale === 'zh' ? '项目总额' : 'Item total', `item:${item.id}:total`],
     ];
     const validation = item.validation.checked
       ? `<span class="math-check ${item.validation.valid ? 'valid' : 'invalid'}">${item.quantity ?? '—'} × ${formatMoney(item.unitPriceCents)} ${item.validation.valid ? '=' : '≠'} ${formatMoney(item.totalCents)} ${item.validation.valid ? '✓' : `(${formatDifference(item.validation.differenceCents)})`}</span>`
-      : '<span class="math-check pending">Complete quantity, unit price and total</span>';
+      : `<span class="math-check pending">${locale === 'zh' ? '请填写数量、单价和总额' : 'Complete quantity, unit price and total'}</span>`;
     return `<article class="item-card">
-      <div class="item-card-title"><strong>Item ${itemNumber}</strong>${validation}</div>
+      <div class="item-card-title"><strong>${locale === 'zh' ? '项目' : 'Item'} ${itemNumber}</strong>${validation}</div>
       <div class="field-grid">${fields.map(([label, target]) => mappingField(label, target)).join('')}</div>
     </article>`;
   }).join('');
   const summaryTargets: Array<[string, TargetKey]> = [
-    ['Subtotal', 'summary:subtotal'], ['Service charge', 'summary:serviceCharge'],
-    ['SST / GST', 'summary:tax'], ['Discount', 'summary:discount'],
-    ['Rounding', 'summary:rounding'], ['Grand total', 'summary:grandTotal'],
+    [locale === 'zh' ? '小计' : 'Subtotal', 'summary:subtotal'], [locale === 'zh' ? '服务费' : 'Service charge', 'summary:serviceCharge'],
+    ['SST / GST', 'summary:tax'], [locale === 'zh' ? '折扣' : 'Discount', 'summary:discount'],
+    [locale === 'zh' ? '舍入调整' : 'Rounding', 'summary:rounding'], [locale === 'zh' ? '账单总额' : 'Grand total', 'summary:grandTotal'],
   ];
   const overall = reviewModel.validation;
   const overallText = overall.needsReview
-    ? 'Amounts need review'
-    : overall.subtotalValid === true && overall.grandTotalValid === true ? 'Receipt balances ✓' : 'Complete totals to validate';
+    ? (locale === 'zh' ? '金额需要检查' : 'Amounts need review')
+    : overall.subtotalValid === true && overall.grandTotalValid === true ? (locale === 'zh' ? '收据金额吻合 ✓' : 'Receipt balances ✓') : (locale === 'zh' ? '请填写总额以进行验证' : 'Complete totals to validate');
   reviewFields.innerHTML = `${itemCards}
-    <article class="item-card totals-card"><div class="item-card-title"><strong>Receipt totals</strong><span class="math-check ${overall.needsReview ? 'invalid' : 'pending'}">${overallText}</span></div>
+    <article class="item-card totals-card"><div class="item-card-title"><strong>${locale === 'zh' ? '收据总额' : 'Receipt totals'}</strong><span class="math-check ${overall.needsReview ? 'invalid' : 'pending'}">${overallText}</span></div>
     <div class="field-grid">${summaryTargets.map(([label, target]) => mappingField(label, target)).join('')}</div></article>`;
   const issues = reviewIssues(reviewModel);
   reviewHealth.className = `review-health ${issues.length ? 'needs-attention' : 'ready'}`;
   reviewHealth.innerHTML = issues.length
-    ? `<strong>${issues.length} ${issues.length === 1 ? 'check' : 'checks'} remaining</strong><span>${escapeHtml(issues.slice(0, 3).join(' · '))}${issues.length > 3 ? ` · +${issues.length - 3} more` : ''}</span>`
-    : '<strong>Ready to continue ✓</strong><span>Items and receipt total are complete.</span>';
-  confirmReviewButton.textContent = issues.length ? `Continue after review (${issues.length}) →` : 'Confirm receipt →';
+    ? `<strong>${locale === 'zh' ? `还有 ${issues.length} 项需要检查` : `${issues.length} ${issues.length === 1 ? 'check' : 'checks'} remaining`}</strong><span>${escapeHtml(issues.slice(0, 3).join(' · '))}${issues.length > 3 ? ` · +${issues.length - 3} ${locale === 'zh' ? '项' : 'more'}` : ''}</span>`
+    : (locale === 'zh' ? '<strong>可以继续 ✓</strong><span>项目和收据总额均已填写完成。</span>' : '<strong>Ready to continue ✓</strong><span>Items and receipt total are complete.</span>');
+  confirmReviewButton.textContent = issues.length ? (locale === 'zh' ? `检查后继续（${issues.length}）→` : `Continue after review (${issues.length}) →`) : (locale === 'zh' ? '确认收据 →' : 'Confirm receipt →');
   editingBanner.innerHTML = activeTarget
-    ? `<strong>EDITING</strong><span>${escapeHtml(targetLabel(activeTarget, reviewModel))}</span><small>Tap an OCR box on the receipt${activeTarget.endsWith(':foodName') ? ' · tap more boxes to combine the name' : ''}</small>`
-    : '<span>Select a field, then tap OCR text on the receipt</span>';
+    ? `<strong>${locale === 'zh' ? '正在编辑' : 'EDITING'}</strong><span>${escapeHtml(targetLabel(activeTarget, reviewModel))}</span><small>${locale === 'zh' ? '点击收据上的 OCR 方框' : 'Tap an OCR box on the receipt'}${activeTarget.endsWith(':foodName') ? (locale === 'zh' ? ' · 可点击多个方框组合名称' : ' · tap more boxes to combine the name') : ''}</small>`
+    : (locale === 'zh' ? '<span>先选择字段，再点击收据上的 OCR 文字</span>' : '<span>Select a field, then tap OCR text on the receipt</span>');
   undoButton.disabled = mappingHistory.length === 0;
   clearButton.disabled = activeTarget === null;
   updateBoxStates();
@@ -604,7 +694,7 @@ async function openHistoryReceipt(id: string): Promise<void> {
   scanView.classList.remove('hidden');
   historyView.classList.add('hidden');
   renderResult(record.ocrResult, record.ocrMappings);
-  saveMessage.textContent = 'Opened from History. Saving will update this receipt.';
+  saveMessage.textContent = locale === 'zh' ? '已从历史记录打开，保存时会更新这张收据。' : 'Opened from History. Saving will update this receipt.';
   peopleStep.scrollIntoView({ behavior: 'smooth', block: 'start' });
 }
 
@@ -671,11 +761,11 @@ function addManualItem(): void {
   const row = document.createElement('article');
   row.className = 'manual-item';
   row.dataset.manualItemId = id;
-  row.innerHTML = `<label class="manual-name">Food name<input data-field="name" placeholder="e.g. Chicken rice"></label>
-    <label>Quantity<input data-field="quantity" type="number" min="0.01" step="any" value="1"></label>
-    <label>Unit price<input data-field="unitPrice" type="number" min="0" step="0.01" placeholder="0.00"></label>
-    <label>Total<input data-field="total" type="number" min="0" step="0.01" placeholder="0.00"></label>
-    <button type="button" data-remove-manual aria-label="Delete item">Delete</button>`;
+  row.innerHTML = `<label class="manual-name">${locale === 'zh' ? '餐点名称' : 'Food name'}<input data-field="name" placeholder="${locale === 'zh' ? '例如：鸡饭' : 'e.g. Chicken rice'}"></label>
+    <label>${locale === 'zh' ? '数量' : 'Quantity'}<input data-field="quantity" type="number" min="0.01" step="any" value="1"></label>
+    <label>${locale === 'zh' ? '单价' : 'Unit price'}<input data-field="unitPrice" type="number" min="0" step="0.01" placeholder="0.00"></label>
+    <label>${locale === 'zh' ? '总计' : 'Total'}<input data-field="total" type="number" min="0" step="0.01" placeholder="0.00"></label>
+    <button type="button" data-remove-manual aria-label="${locale === 'zh' ? '删除项目' : 'Delete item'}">${locale === 'zh' ? '删除' : 'Delete'}</button>`;
   manualItems.append(row);
   updateManualTotal();
 }
@@ -695,7 +785,7 @@ function updateManualTotal(): void {
   }, 0);
   const grand = itemSubtotal + moneyInputCents(manualService) + moneyInputCents(manualTax)
     - moneyInputCents(manualDiscount) + moneyInputCents(manualRounding);
-  manualCalculated.innerHTML = `<span>Calculated bill total</span><strong>${formatMoney(grand)}</strong>`;
+  manualCalculated.innerHTML = `<span>${locale === 'zh' ? '计算后的账单总额' : 'Calculated bill total'}</span><strong>${formatMoney(grand)}</strong>`;
 }
 
 function confirmManualReceipt(): void {
@@ -716,7 +806,7 @@ function confirmManualReceipt(): void {
       validation: { checked: true, valid: Math.abs(quantity * unitPriceCents - totalCents) <= 1, differenceCents: quantity * unitPriceCents - totalCents },
     };
   }).filter((item) => item.name && item.quantity > 0);
-  if (!items.length) { manualCalculated.textContent = 'Add at least one item with a name and quantity.'; return; }
+  if (!items.length) { manualCalculated.textContent = locale === 'zh' ? '请至少添加一个包含名称和数量的项目。' : 'Add at least one item with a name and quantity.'; return; }
   const subtotal = items.reduce((sum, item) => sum + item.totalCents, 0);
   const service = moneyInputCents(manualService);
   const tax = moneyInputCents(manualTax);
@@ -735,13 +825,13 @@ function confirmManualReceipt(): void {
     },
     validation: { itemArithmeticValid: items.every((item) => item.validation.valid), subtotalValid: true, grandTotalValid: true, needsReview: items.some((item) => !item.validation.valid) },
   };
-  currentResult = { parsed: { restaurantName: { value: manualRestaurant.value.trim() || 'Manual receipt' } } } as ReceiptOcrResponse;
+  currentResult = { parsed: { restaurantName: { value: manualRestaurant.value.trim() || (locale === 'zh' ? '手动输入的收据' : 'Manual receipt') } } } as ReceiptOcrResponse;
   goToStep(2);
 }
 
 function renderPeople(): void {
   peopleList.innerHTML = people.length
-    ? people.map((person, index) => `<div class="person-row" data-person-id="${person.id}"><span>${String(index + 1).padStart(2, '0')}</span><strong>${escapeHtml(person.name)}</strong><button type="button" aria-label="Remove ${escapeHtml(person.name)}">Remove</button></div>`).join('')
+    ? people.map((person, index) => `<div class="person-row" data-person-id="${person.id}"><span>${String(index + 1).padStart(2, '0')}</span><strong>${escapeHtml(person.name)}</strong><button type="button" aria-label="${locale === 'zh' ? '移除' : 'Remove'} ${escapeHtml(person.name)}">${locale === 'zh' ? '移除' : 'Remove'}</button></div>`).join('')
     : locale === 'zh'
       ? '<div class="friendly-empty"><strong>还没有添加人员</strong><span>先添加自己，再添加一起分账的朋友。</span></div>'
       : '<div class="friendly-empty"><strong>No one added yet</strong><span>Add yourself first, then everyone sharing the bill.</span></div>';
@@ -755,7 +845,7 @@ function renderAssignments(): void {
   if (!reviewModel) return;
   assignmentList.innerHTML = reviewModel.items.map((item, index) => {
     const selected = assignments.get(item.id) ?? new Set<string>();
-    return `<article class="assignment-card"><div><small>ITEM ${String(index + 1).padStart(2, '0')}</small><strong>${escapeHtml(item.name || 'Unnamed item')}</strong><span>${formatMoney(item.totalCents)}</span></div><div class="person-options">${people.map((person) => `<label><input type="checkbox" data-item-id="${item.id}" data-person-id="${person.id}" ${selected.has(person.id) ? 'checked' : ''}><span>${escapeHtml(person.name)}</span></label>`).join('')}</div></article>`;
+    return `<article class="assignment-card"><div><small>${locale === 'zh' ? '项目' : 'ITEM'} ${String(index + 1).padStart(2, '0')}</small><strong>${escapeHtml(item.name || (locale === 'zh' ? '未命名项目' : 'Unnamed item'))}</strong><span>${formatMoney(item.totalCents)}</span></div><div class="person-options">${people.map((person) => `<label><input type="checkbox" data-item-id="${item.id}" data-person-id="${person.id}" ${selected.has(person.id) ? 'checked' : ''}><span>${escapeHtml(person.name)}</span></label>`).join('')}</div></article>`;
   }).join('');
   updateAssignmentProgress();
 }
@@ -816,13 +906,17 @@ function renderFinalSummary(): void {
 function renderPaymentQr(): void {
   if (paymentQrObjectUrl) URL.revokeObjectURL(paymentQrObjectUrl);
   paymentQrObjectUrl = paymentQr ? URL.createObjectURL(paymentQr.blob) : '';
-  paymentQrState.textContent = paymentQr ? 'Ready ✓' : 'Set up →';
+  paymentQrState.textContent = paymentQr ? (locale === 'zh' ? '已准备 ✓' : 'Ready ✓') : (locale === 'zh' ? '设置 →' : 'Set up →');
   paymentQrEmpty.classList.toggle('hidden', Boolean(paymentQr));
   paymentQrPreview.classList.toggle('hidden', !paymentQr);
   paymentQrDelete.classList.toggle('hidden', !paymentQr);
-  paymentQrUpload.textContent = paymentQr ? 'Replace QR image' : 'Upload QR image';
+  paymentQrUpload.textContent = paymentQr
+    ? (locale === 'zh' ? '更换二维码图片' : 'Replace QR image')
+    : (locale === 'zh' ? '上传二维码图片' : 'Upload QR image');
   paymentQrShare.classList.toggle('hidden', !paymentQr);
-  shareResult.textContent = paymentQr ? '⌯  Share bill + payment QR' : '⌯  Share result';
+  shareResult.textContent = paymentQr
+    ? (locale === 'zh' ? '⌯  分享账单和收款码' : '⌯  Share bill + payment QR')
+    : (locale === 'zh' ? '⌯  分享结果' : '⌯  Share result');
   if (!paymentQr || !paymentQrObjectUrl) return;
   paymentQrPreview.src = paymentQrObjectUrl;
   paymentQrShareImage.src = paymentQrObjectUrl;
@@ -833,23 +927,23 @@ function renderPaymentQr(): void {
 async function setPaymentQr(file: File): Promise<void> {
   paymentQrFeedback.textContent = '';
   if (!file.type.startsWith('image/')) {
-    paymentQrFeedback.textContent = 'Choose a PNG, JPG or WebP image.';
+    paymentQrFeedback.textContent = locale === 'zh' ? '请选择 PNG、JPG 或 WebP 图片。' : 'Choose a PNG, JPG or WebP image.';
     return;
   }
   if (file.size > 8 * 1024 * 1024) {
-    paymentQrFeedback.textContent = 'QR image must be smaller than 8 MB.';
+    paymentQrFeedback.textContent = locale === 'zh' ? '二维码图片必须小于 8 MB。' : 'QR image must be smaller than 8 MB.';
     return;
   }
   paymentQrUpload.disabled = true;
-  paymentQrFeedback.textContent = 'Saving QR on this device…';
+  paymentQrFeedback.textContent = locale === 'zh' ? '正在将二维码保存在此设备…' : 'Saving QR on this device…';
   try {
     await savePaymentQr(file);
     paymentQr = await loadPaymentQr() ?? null;
     renderPaymentQr();
-    paymentQrFeedback.textContent = 'Payment QR saved. It will be attached to future bill shares.';
+    paymentQrFeedback.textContent = locale === 'zh' ? '收款二维码已保存，之后分享账单时会自动附上。' : 'Payment QR saved. It will be attached to future bill shares.';
     paymentQrSettings.open = true;
   } catch {
-    paymentQrFeedback.textContent = 'Could not save this QR image. Try a smaller image.';
+    paymentQrFeedback.textContent = locale === 'zh' ? '无法保存二维码，请尝试较小的图片。' : 'Could not save this QR image. Try a smaller image.';
   } finally {
     paymentQrUpload.disabled = false;
     paymentQrInput.value = '';
@@ -877,19 +971,19 @@ function buildShareText(): string {
   const restaurant = currentResult.parsed.restaurantName.value || 'FastSplit bill';
   return [
     `FastSplit · ${restaurant}`,
-    `Bill total: ${formatMoney(grand)}`,
+    `${locale === 'zh' ? '账单总额' : 'Bill total'}: ${formatMoney(grand)}`,
     '',
     ...shares.flatMap((person) => {
       const itemNames = reviewModel?.items
         .filter((item) => assignments.get(item.id)?.has(person.id))
-        .map((item) => item.name || 'Unnamed item') ?? [];
+        .map((item) => item.name || (locale === 'zh' ? '未命名项目' : 'Unnamed item')) ?? [];
       return [
         `${person.name}: ${formatMoney(person.amountCents)}`,
-        ...(itemNames.length ? [`  ${itemNames.join(' · ')}`] : ['  No items assigned']),
+        ...(itemNames.length ? [`  ${itemNames.join(' · ')}`] : [`  ${locale === 'zh' ? '没有分配项目' : 'No items assigned'}`]),
       ];
     }),
     '',
-    'Split fairly with FastSplit.',
+    locale === 'zh' ? '使用 FastSplit，公平分账。' : 'Split fairly with FastSplit.',
   ].join('\n');
 }
 
@@ -903,30 +997,30 @@ async function shareBillResult(): Promise<void> {
       const shareWithQr: ShareData = { title: 'FastSplit bill', text, files: [qrFile] };
       if (navigator.share && navigator.canShare?.(shareWithQr)) {
         await navigator.share(shareWithQr);
-        shareMessage.textContent = 'Bill text and payment QR shared.';
+        shareMessage.textContent = locale === 'zh' ? '账单文字和收款二维码已分享。' : 'Bill text and payment QR shared.';
         return;
       }
     }
     if (navigator.share) {
       await navigator.share({ title: 'FastSplit bill', text });
       shareMessage.textContent = paymentQr
-        ? 'This browser shared the bill text only. Use “Save QR image” to send the QR separately.'
-        : 'Share sheet opened.';
+        ? (locale === 'zh' ? '此浏览器只能分享账单文字，请使用“保存二维码图片”另行发送。' : 'This browser shared the bill text only. Use “Save QR image” to send the QR separately.')
+        : (locale === 'zh' ? '已打开分享选单。' : 'Share sheet opened.');
     } else {
       await navigator.clipboard.writeText(text);
       shareMessage.textContent = paymentQr
-        ? 'Bill copied as text. Save the QR image above and attach it in your messaging app.'
-        : 'Bill copied as text. Paste it into WhatsApp or your messaging app.';
+        ? (locale === 'zh' ? '账单文字已复制，请保存上方二维码并在聊天软件中附上。' : 'Bill copied as text. Save the QR image above and attach it in your messaging app.')
+        : (locale === 'zh' ? '账单文字已复制，请粘贴到 WhatsApp 或聊天软件。' : 'Bill copied as text. Paste it into WhatsApp or your messaging app.');
     }
   } catch (error) {
     if (error instanceof DOMException && error.name === 'AbortError') return;
     try {
       await navigator.clipboard.writeText(text);
       shareMessage.textContent = paymentQr
-        ? 'Bill copied as text. Save the QR image above and attach it in your messaging app.'
-        : 'Bill copied as text. Paste it into WhatsApp or your messaging app.';
+        ? (locale === 'zh' ? '账单文字已复制，请保存上方二维码并在聊天软件中附上。' : 'Bill copied as text. Save the QR image above and attach it in your messaging app.')
+        : (locale === 'zh' ? '账单文字已复制，请粘贴到 WhatsApp 或聊天软件。' : 'Bill copied as text. Paste it into WhatsApp or your messaging app.');
     } catch {
-      shareMessage.textContent = 'Could not open sharing. Please try again.';
+      shareMessage.textContent = locale === 'zh' ? '无法打开分享功能，请重试。' : 'Could not open sharing. Please try again.';
     }
   }
 }
@@ -949,25 +1043,25 @@ function escapeHtml(value: string): string {
 
 async function prepareSelectedReceipt(file: File): Promise<void> {
   beginFlow();
-  status.textContent = 'Improving image…';
+  status.textContent = locale === 'zh' ? '正在优化图片…' : 'Improving image…';
   try {
     prepared = await prepareReceiptImage(file);
     preview.src = prepared.previewUrl;
-    imageInfo.textContent = `${prepared.width} × ${prepared.height} · ${(prepared.uploadedBytes / 1024 / 1024).toFixed(2)} MB upload`;
+    imageInfo.textContent = `${prepared.width} × ${prepared.height} · ${(prepared.uploadedBytes / 1024 / 1024).toFixed(2)} MB ${locale === 'zh' ? '上传大小' : 'upload'}`;
     dropzone.classList.add('hidden');
     workspace.classList.remove('hidden');
   } catch (error) {
-    status.textContent = error instanceof Error ? error.message : 'Could not prepare image.';
+    status.textContent = error instanceof Error ? error.message : (locale === 'zh' ? '无法处理图片。' : 'Could not prepare image.');
   }
 }
 
 function startScanProgress(): void {
   stopScanProgress();
   const messages = [
-    'Uploading receipt securely…',
-    'Reading printed text and prices…',
-    'Reconstructing receipt rows…',
-    'Checking items against the totals…',
+    locale === 'zh' ? '正在安全上传收据…' : 'Uploading receipt securely…',
+    locale === 'zh' ? '正在读取文字和价格…' : 'Reading printed text and prices…',
+    locale === 'zh' ? '正在重建收据项目…' : 'Reconstructing receipt rows…',
+    locale === 'zh' ? '正在核对项目和总额…' : 'Checking items against the totals…',
   ];
   let index = 0;
   scanProgress = 8;
@@ -994,7 +1088,7 @@ function resetScanButton(): void {
   scanProgress = 0;
   scanButton.classList.remove('is-scanning');
   scanButton.style.removeProperty('--scan-progress');
-  scanButton.querySelector<HTMLElement>('.scan-button-label')!.textContent = 'Read receipt';
+  scanButton.querySelector<HTMLElement>('.scan-button-label')!.textContent = locale === 'zh' ? '读取收据' : 'Read receipt';
   scanButton.querySelector<HTMLElement>('.scan-button-percent')!.textContent = '';
 }
 
@@ -1018,13 +1112,13 @@ scanButton.addEventListener('click', async () => {
     const result = await scanReceipt(prepared.blob, controller.signal);
     scanProgress = 100;
     scanButton.style.setProperty('--scan-progress', '100%');
-    scanButton.querySelector<HTMLElement>('.scan-button-label')!.textContent = 'Receipt ready';
+    scanButton.querySelector<HTMLElement>('.scan-button-label')!.textContent = locale === 'zh' ? '收据已完成' : 'Receipt ready';
     scanButton.querySelector<HTMLElement>('.scan-button-percent')!.textContent = '100%';
     renderResult(result);
   } catch (error) {
     if (error instanceof DOMException && error.name === 'AbortError') return;
     status.className = 'status error';
-    status.textContent = error instanceof Error ? error.message : 'Could not read this receipt clearly.';
+    status.textContent = error instanceof Error ? error.message : (locale === 'zh' ? '无法清楚读取这张收据。' : 'Could not read this receipt clearly.');
   } finally {
     stopScanProgress();
     scanButton.disabled = false;
@@ -1036,7 +1130,9 @@ scanButton.addEventListener('click', async () => {
 saveHistoryButton.addEventListener('click', async () => {
   if (currentIdentity?.mode !== 'authenticated' || !currentResult || !reviewModel) return;
   saveHistoryButton.disabled = true;
-  saveMessage.textContent = currentHistoryId ? 'Updating receipt…' : 'Saving receipt and image…';
+  saveMessage.textContent = currentHistoryId
+    ? (locale === 'zh' ? '正在更新收据…' : 'Updating receipt…')
+    : (locale === 'zh' ? '正在保存收据和图片…' : 'Saving receipt and image…');
   try {
     const fullRecord = createHistoryRecord(currentIdentity.uid, currentResult, reviewModel, '', '');
     const { receiptImagePath, receiptImageUrl, ...record } = fullRecord;
@@ -1053,7 +1149,7 @@ saveHistoryButton.addEventListener('click', async () => {
       const saved = await getReceiptHistory(currentIdentity.uid, currentHistoryId);
       currentHistoryImage = { receiptImagePath: saved.receiptImagePath, receiptImageUrl: saved.receiptImageUrl };
     }
-    saveMessage.textContent = 'Saved permanently to History.';
+    saveMessage.textContent = locale === 'zh' ? '已永久保存到历史记录。' : 'Saved permanently to History.';
   } catch (error) {
     saveMessage.textContent = friendlyHistoryError(error);
   } finally {
@@ -1088,12 +1184,12 @@ peopleForm.addEventListener('submit', (event) => {
   const name = personName.value.trim();
   if (!name) return;
   if (people.some((person) => person.name.localeCompare(name, undefined, { sensitivity: 'accent' }) === 0)) {
-    peopleFeedback.textContent = `${name} is already on the list.`;
+    peopleFeedback.textContent = locale === 'zh' ? `${name} 已经在名单中。` : `${name} is already on the list.`;
     personName.select();
     return;
   }
   people.push({ id: crypto.randomUUID(), name });
-  peopleFeedback.textContent = `${name} added.`;
+  peopleFeedback.textContent = locale === 'zh' ? `已添加 ${name}。` : `${name} added.`;
   personName.value = '';
   renderPeople();
   personName.focus();
@@ -1132,15 +1228,15 @@ paymentQrInput.addEventListener('change', () => {
   if (file) void setPaymentQr(file);
 });
 paymentQrDelete.addEventListener('click', async () => {
-  if (!window.confirm('Remove the payment QR saved on this device?')) return;
+  if (!window.confirm(locale === 'zh' ? '要移除此设备上保存的收款二维码吗？' : 'Remove the payment QR saved on this device?')) return;
   paymentQrDelete.disabled = true;
   try {
     await deletePaymentQr();
     paymentQr = null;
     renderPaymentQr();
-    paymentQrFeedback.textContent = 'Payment QR removed.';
+    paymentQrFeedback.textContent = locale === 'zh' ? '收款二维码已移除。' : 'Payment QR removed.';
   } catch {
-    paymentQrFeedback.textContent = 'Could not remove the QR image.';
+    paymentQrFeedback.textContent = locale === 'zh' ? '无法移除二维码图片。' : 'Could not remove the QR image.';
   } finally {
     paymentQrDelete.disabled = false;
   }
@@ -1277,5 +1373,5 @@ void loadPaymentQr().then((saved) => {
   paymentQr = saved ?? null;
   renderPaymentQr();
 }).catch(() => {
-  paymentQrFeedback.textContent = 'Payment QR storage is unavailable in this browser.';
+  paymentQrFeedback.textContent = locale === 'zh' ? '此浏览器无法使用收款二维码储存功能。' : 'Payment QR storage is unavailable in this browser.';
 });
