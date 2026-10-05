@@ -82,6 +82,27 @@ app.innerHTML = `
           <button id="upload-hero" class="hero-secondary" type="button">⇧&nbsp; Upload receipt</button>
         </div>
         <button id="manual-hero" class="manual-link" type="button">⌕&nbsp; Enter manually&nbsp; →</button>
+        <details id="payment-qr-settings" class="payment-qr-settings payment-feature-card">
+          <summary>
+            <span class="payment-qr-symbol">▣</span>
+            <span class="payment-card-copy"><small class="payment-card-eyebrow">GET PAID FASTER</small><strong>Add your payment details</strong><em>Add a TNG number or payment QR before splitting.</em></span>
+            <span class="payment-card-action"><b id="payment-qr-state">Not set up</b><em>Set up payment →</em></span>
+          </summary>
+          <div class="payment-qr-body">
+            <div class="payment-phone-settings">
+              <label for="payment-phone-input"><strong>TNG phone number</strong><span>Saved only on this device · added to the top of shared bills</span></label>
+              <input id="payment-phone-input" type="tel" inputmode="tel" autocomplete="tel" placeholder="e.g. 0123456789" maxlength="24" />
+              <div class="payment-phone-actions"><button id="payment-phone-save" class="secondary" type="button">Save number</button><button id="payment-phone-delete" class="qr-delete hidden" type="button">Remove</button></div>
+              <p id="payment-phone-feedback" class="save-message" aria-live="polite"></p>
+            </div>
+            <div class="payment-divider"><span>or use a QR image</span></div>
+            <div id="payment-qr-empty" class="payment-qr-empty"><strong>Upload your payment QR</strong><span>DuitNow, bank or e-wallet QR · saved only on this device</span></div>
+            <img id="payment-qr-preview" class="payment-qr-preview hidden" alt="Your payment QR code" />
+            <input id="payment-qr-input" class="hidden" type="file" accept="image/png,image/jpeg,image/webp" />
+            <div class="payment-qr-actions"><button id="payment-qr-upload" class="secondary" type="button">Upload QR image</button><button id="payment-qr-delete" class="qr-delete hidden" type="button">Remove</button></div>
+            <p id="payment-qr-feedback" class="save-message" aria-live="polite"></p>
+          </div>
+        </details>
         <div class="hero-proof" aria-label="FastSplit benefits">
           <span><b>✦ AI-powered</b><small>Reads every item</small></span>
           <span><b>♢ Private</b><small>Your bill stays yours</small></span>
@@ -115,23 +136,6 @@ app.innerHTML = `
         <div class="float-card float-total"><span>✓</span><div><small>TOTAL VERIFIED</small><b>RM183.35</b></div></div>
         <div class="float-card float-pay"><span>▣</span><div><small>PAYMENT READY</small><b>Touch ’n Go</b></div></div>
       </div>
-      <details id="payment-qr-settings" class="payment-qr-settings">
-        <summary><span class="payment-qr-symbol">▦</span><span><strong>Payment details</strong><small>Add your TNG number or payment QR to bill shares</small></span><b id="payment-qr-state">Set up →</b></summary>
-        <div class="payment-qr-body">
-          <div class="payment-phone-settings">
-            <label for="payment-phone-input"><strong>TNG phone number</strong><span>Saved only on this device · added to the top of shared bills</span></label>
-            <input id="payment-phone-input" type="tel" inputmode="tel" autocomplete="tel" placeholder="e.g. 0123456789" maxlength="24" />
-            <div class="payment-phone-actions"><button id="payment-phone-save" class="secondary" type="button">Save number</button><button id="payment-phone-delete" class="qr-delete hidden" type="button">Remove</button></div>
-            <p id="payment-phone-feedback" class="save-message" aria-live="polite"></p>
-          </div>
-          <div class="payment-divider"><span>or use a QR image</span></div>
-          <div id="payment-qr-empty" class="payment-qr-empty"><strong>Upload your payment QR</strong><span>DuitNow, bank or e-wallet QR · saved only on this device</span></div>
-          <img id="payment-qr-preview" class="payment-qr-preview hidden" alt="Your payment QR code" />
-          <input id="payment-qr-input" class="hidden" type="file" accept="image/png,image/jpeg,image/webp" />
-          <div class="payment-qr-actions"><button id="payment-qr-upload" class="secondary" type="button">Upload QR image</button><button id="payment-qr-delete" class="qr-delete hidden" type="button">Remove</button></div>
-          <p id="payment-qr-feedback" class="save-message" aria-live="polite"></p>
-        </div>
-      </details>
       <div class="how-it-works" aria-label="How FastSplit works">
         <div data-demo-target="receipt"><span>01</span><strong>Add receipt</strong><small>Take a photo or upload one</small></div>
         <div data-demo-target="assign"><span>02</span><strong>Add diners</strong><small>Add everyone sharing the bill</small></div>
@@ -448,8 +452,9 @@ function applyLanguage(): void {
     ['#google-login', 'Continue with Google', '使用 Google 继续'],
     ['#guest-login', 'Continue as Guest', '以访客身份继续'],
     ['#logout-button', 'Log out', '登出'],
-    ['#payment-qr-settings summary strong', 'Payment details', '收款资料'],
-    ['#payment-qr-settings summary small', 'Add your TNG number or payment QR to bill shares', '分享账单时附上 TNG 电话号码或收款码'],
+    ['.payment-card-eyebrow', 'GET PAID FASTER', '更快收到付款'],
+    ['.payment-card-copy strong', 'Add your payment details', '添加收款资料'],
+    ['.payment-card-copy em', 'Add a TNG number or payment QR before splitting.', '分账前添加 TNG 电话号码或收款二维码。'],
     ['.payment-phone-settings label strong', 'TNG phone number', 'TNG 电话号码'],
     ['.payment-phone-settings label span', 'Saved only on this device · added to the top of shared bills', '仅保存在此设备 · 会显示在分享账单最上方'],
     ['#payment-phone-save', 'Save number', '保存号码'],
@@ -995,7 +1000,11 @@ function renderFinalSummary(): void {
 function renderPaymentQr(): void {
   if (paymentQrObjectUrl) URL.revokeObjectURL(paymentQrObjectUrl);
   paymentQrObjectUrl = paymentQr ? URL.createObjectURL(paymentQr.blob) : '';
-  paymentQrState.textContent = paymentQr || paymentPhone ? (locale === 'zh' ? '已准备 ✓' : 'Ready ✓') : (locale === 'zh' ? '设置 →' : 'Set up →');
+  const paymentReady = Boolean(paymentQr || paymentPhone);
+  paymentQrSettings.classList.toggle('payment-ready', paymentReady);
+  paymentQrState.textContent = paymentReady ? (locale === 'zh' ? '收款已准备 ✓' : 'Payment ready ✓') : (locale === 'zh' ? '尚未设置' : 'Not set up');
+  const paymentAction = paymentQrSettings.querySelector<HTMLElement>('.payment-card-action em');
+  if (paymentAction) paymentAction.textContent = paymentReady ? (locale === 'zh' ? '管理收款资料 →' : 'Manage payment →') : (locale === 'zh' ? '设置收款方式 →' : 'Set up payment →');
   paymentQrEmpty.classList.toggle('hidden', Boolean(paymentQr));
   paymentQrPreview.classList.toggle('hidden', !paymentQr);
   paymentQrDelete.classList.toggle('hidden', !paymentQr);

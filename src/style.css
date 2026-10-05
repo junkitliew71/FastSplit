@@ -384,7 +384,24 @@ main { width: min(1180px,calc(100% - 40px)); }
 .demo-dock { display: flex; justify-content: center; gap: 8px; padding-top: 9px; }.demo-dock i { width: 36px; height: 5px; border-radius: 99px; background: #d6e0db; transition: .35s; }.demo-dock i.active { width: 54px; background: #08785f; }
 .float-card { position: absolute; z-index: 6; display: flex; align-items: center; gap: 9px; padding: 10px 13px; border: 1px solid rgba(15,66,53,.1); border-radius: 15px; background: rgba(255,255,255,.72); box-shadow: 0 17px 35px rgba(5,48,36,.13); backdrop-filter: blur(20px); animation: card-float 4s ease-in-out infinite; }
 .float-card > span { display: grid; width: 32px; height: 32px; place-items: center; border-radius: 10px; color: #08785f; background: #e4f2e8; }.float-card > div { display: flex; flex-direction: column; }.float-card small { color: #71817f; font-size: 6px; letter-spacing: .1em; }.float-card b { font-size: 10px; }.float-items { top: 14%; left: 0; }.float-total { right: -2%; bottom: 29%; animation-delay: -1.4s; }.float-pay { bottom: 7%; left: 2%; animation-delay: -2.8s; }
-.hero > .payment-qr-settings { position: relative; z-index: 7; grid-column: 1 / -1; width: min(600px,100%); margin: 0 auto; border-color: rgba(15,66,53,.11); background: rgba(255,255,255,.66); backdrop-filter: blur(20px); }
+.hero-copy > .payment-feature-card { position: relative; z-index: 7; width: 100%; margin: 20px 0 0; overflow: hidden; border-color: rgba(8,120,95,.3); border-radius: 20px; background: rgba(255,255,255,.82); box-shadow: 0 18px 50px rgba(7,84,73,.13); backdrop-filter: blur(20px); transition: border-color .3s ease,box-shadow .3s ease,transform .3s ease; animation: payment-glow 2.8s ease-in-out infinite; }
+.hero-copy > .payment-feature-card[open],.hero-copy > .payment-feature-card.payment-ready { animation: none; }
+.hero-copy > .payment-feature-card[open] { border-color: rgba(8,120,95,.48); box-shadow: 0 24px 58px rgba(7,84,73,.17); }
+.payment-feature-card summary { min-height: 84px; grid-template-columns: 48px minmax(0,1fr) auto; gap: 12px; padding: 15px 16px; }
+.payment-feature-card .payment-qr-symbol { width: 46px; height: 46px; border-radius: 14px; color: white; background: linear-gradient(145deg,#0b8d6e,#075449); box-shadow: 0 10px 22px rgba(8,120,95,.24); }
+.payment-feature-card .payment-card-copy { display: flex; min-width: 0; flex-direction: column; gap: 2px; }
+.payment-feature-card .payment-card-eyebrow { overflow: visible; color: #08785f; font-size: 9px; font-weight: 800; letter-spacing: .13em; text-overflow: clip; white-space: normal; }
+.payment-feature-card .payment-card-copy strong { color: #173c36; font-size: 14px; }
+.payment-feature-card .payment-card-copy em { overflow: hidden; color: #71817f; font-size: 10px; font-style: normal; text-overflow: ellipsis; white-space: nowrap; }
+.payment-card-action { display: flex; align-items: flex-end; flex-direction: column; gap: 8px; }
+.payment-card-action b { display: flex; align-items: center; gap: 6px; padding: 5px 8px; border-radius: 99px; color: #a94b2f; background: #fff0ea; font-size: 9px; white-space: nowrap; }
+.payment-card-action b::before { width: 6px; height: 6px; border-radius: 50%; background: #e97855; box-shadow: 0 0 0 4px rgba(233,120,85,.12); content: ''; }
+.payment-card-action em { color: #08785f; font-size: 10px; font-style: normal; font-weight: 800; white-space: nowrap; }
+.payment-feature-card.payment-ready { border-color: rgba(8,120,95,.32); }
+.payment-feature-card.payment-ready .payment-card-action b { color: #08785f; background: #e5f5ea; }
+.payment-feature-card.payment-ready .payment-card-action b::before { background: #08785f; box-shadow: 0 0 0 4px rgba(8,120,95,.12); }
+.payment-feature-card[open] .payment-card-action em { transform: rotate(0); }
+.payment-feature-card .payment-qr-body { background: rgba(255,255,255,.36); }
 .hero > .how-it-works { position: absolute; z-index: 6; right: 22px; bottom: 22px; left: 22px; width: auto; margin: 0; padding: 8px; border: 1px solid rgba(15,66,53,.1); border-radius: 18px; background: rgba(255,255,255,.68); backdrop-filter: blur(22px); }
 .how-it-works > div { border: 0; border-radius: 13px; background: transparent; cursor: pointer; }
 .how-it-works > div.demo-active { background: rgba(224,239,226,.92); }
@@ -399,6 +416,7 @@ main { width: min(1180px,calc(100% - 40px)); }
 @keyframes demo-progress { 50% { width: 87%; } }
 @keyframes dish-spin { to { transform: rotate(360deg); } }
 @keyframes card-float { 50% { transform: translateY(-8px); } }
+@keyframes payment-glow { 50% { border-color: rgba(8,120,95,.48); box-shadow: 0 20px 55px rgba(8,120,95,.24); transform: translateY(-2px); } }
 
 @media (max-width: 900px) {
   .hero { grid-template-columns: 1fr; padding-bottom: 152px; }
@@ -421,5 +439,7 @@ main { width: min(1180px,calc(100% - 40px)); }
   .float-items { left: 0; }.float-total { right: 0; }.float-pay { left: 0; }
   .hero > .how-it-works { grid-template-columns: 1fr; }
   .how-it-works > div { padding: 8px 12px; }
-  .hero > .payment-qr-settings { margin-top: 8px; }
+  .hero-copy > .payment-feature-card { margin-top: 18px; }
+  .payment-feature-card summary { grid-template-columns: 46px minmax(0,1fr); }
+  .payment-card-action { grid-column: 2; align-items: flex-start; flex-direction: row; flex-wrap: wrap; }
 }
