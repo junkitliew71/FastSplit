@@ -70,13 +70,51 @@ app.innerHTML = `
   <main id="app-main">
     <div id="scan-view">
     <section class="hero">
-      <h1>Split the bill.<br><em>Pay for what you ate.</em></h1>
-      <p class="intro">Add your receipt, choose who had what, and share the totals.</p>
-      <div class="hero-actions">
-        <button id="scan-hero" class="hero-primary" type="button">${cameraIcon}<span>Scan receipt</span></button>
-        <button id="upload-hero" class="hero-secondary" type="button">⇧&nbsp; Upload receipt</button>
+      <span class="hero-aurora hero-aurora-one" aria-hidden="true"></span>
+      <span class="hero-aurora hero-aurora-two" aria-hidden="true"></span>
+      <div class="hero-grid" aria-hidden="true"></div>
+      <div class="hero-copy">
+        <p class="hero-overline"><span></span> THE BEAUTIFUL WAY TO SPLIT A BILL</p>
+        <h1>Split the bill.<br><em>Pay for what you ate.</em></h1>
+        <p class="intro">Add your receipt, choose who had what, and share the totals.</p>
+        <div class="hero-actions">
+          <button id="scan-hero" class="hero-primary" type="button">${cameraIcon}<span>Scan receipt</span><b aria-hidden="true">↗</b></button>
+          <button id="upload-hero" class="hero-secondary" type="button">⇧&nbsp; Upload receipt</button>
+        </div>
+        <button id="manual-hero" class="manual-link" type="button">⌕&nbsp; Enter manually&nbsp; →</button>
+        <div class="hero-proof" aria-label="FastSplit benefits">
+          <span><b>✦ AI-powered</b><small>Reads every item</small></span>
+          <span><b>♢ Private</b><small>Your bill stays yours</small></span>
+          <span><b>✓ Exact</b><small>Every cent allocated</small></span>
+        </div>
       </div>
-      <button id="manual-hero" class="manual-link" type="button">⌕&nbsp; Enter manually&nbsp; →</button>
+      <div class="motion-stage" aria-label="Animated FastSplit preview">
+        <span class="orbit orbit-outer" aria-hidden="true"><i></i><i></i></span>
+        <span class="orbit orbit-inner" aria-hidden="true"></span>
+        <article class="demo-phone">
+          <div class="demo-status"><span>9:41</span><i></i><b>●●●</b></div>
+          <div class="demo-head"><span class="demo-mark">${cameraIcon}</span><div><small>FASTSPLIT</small><b id="demo-title">Reading receipt</b></div><span class="demo-live"><i></i> LIVE</span></div>
+          <div class="demo-screens">
+            <section class="demo-screen active" data-demo-screen="receipt">
+              <div class="demo-receipt"><div class="demo-merchant"><span>JS</span><div><b>Jatújak # Siam</b><small>Table 12 · 3 diners</small></div></div><p><span>Chicken Rice</span><b>18.90</b></p><p class="highlight"><span>Prawn Cake</span><b>32.00</b></p><p><span>Honey Lemon Soda</span><b>12.50</b></p><p class="muted"><span>Service + SST</span><b>19.65</b></p><div class="demo-total"><span>TOTAL</span><strong>RM183.35</strong></div><i class="scan-beam"></i></div>
+              <div class="demo-progress"><i></i><small>Reading item 4 of 7</small></div>
+            </section>
+            <section class="demo-screen" data-demo-screen="assign">
+              <div class="demo-dish"><small>CURRENT DISH · 05 / 07</small><span>🍤</span><h3>Prawn Cake</h3><strong>RM32.00</strong></div>
+              <div class="demo-people"><p class="selected"><span>JK</span><b>Jun Kit</b><i>✓</i></p><p><span>KY</span><b>Kelly</b><i>＋</i></p><p><span>MW</span><b>Mei Wei</b><i>＋</i></p></div>
+            </section>
+            <section class="demo-screen" data-demo-screen="settle">
+              <div class="demo-check">✓</div><small>BILL BALANCED</small><h3>Everyone’s square.</h3>
+              <div class="demo-tng"><span>PAY TO · TNG</span><strong>012 345 6789</strong><b>Copy</b></div>
+              <div class="demo-splits"><p><span>JK</span><b>RM61.20</b></p><p><span>KY</span><b>RM64.00</b></p><p><span>MW</span><b>RM58.15</b></p></div>
+            </section>
+          </div>
+          <div class="demo-dock"><i class="active"></i><i></i><i></i></div>
+        </article>
+        <div class="float-card float-items"><span>✦</span><div><small>ITEMS FOUND</small><b>7 / 7</b></div></div>
+        <div class="float-card float-total"><span>✓</span><div><small>TOTAL VERIFIED</small><b>RM183.35</b></div></div>
+        <div class="float-card float-pay"><span>▣</span><div><small>PAYMENT READY</small><b>Touch ’n Go</b></div></div>
+      </div>
       <details id="payment-qr-settings" class="payment-qr-settings">
         <summary><span class="payment-qr-symbol">▦</span><span><strong>Payment details</strong><small>Add your TNG number or payment QR to bill shares</small></span><b id="payment-qr-state">Set up →</b></summary>
         <div class="payment-qr-body">
@@ -95,9 +133,9 @@ app.innerHTML = `
         </div>
       </details>
       <div class="how-it-works" aria-label="How FastSplit works">
-        <div><span>1</span><strong>Add receipt</strong><small>Take a photo or upload one</small></div>
-        <div><span>2</span><strong>Add diners</strong><small>Add everyone sharing the bill</small></div>
-        <div><span>3</span><strong>Share totals</strong><small>Send a clear text breakdown</small></div>
+        <div data-demo-target="receipt"><span>01</span><strong>Add receipt</strong><small>Take a photo or upload one</small></div>
+        <div data-demo-target="assign"><span>02</span><strong>Add diners</strong><small>Add everyone sharing the bill</small></div>
+        <div data-demo-target="settle"><span>03</span><strong>Share totals</strong><small>Send a clear text breakdown</small></div>
       </div>
     </section>
     <section class="scanner hidden" aria-labelledby="scan-title">
@@ -303,6 +341,37 @@ const rawDetections = document.querySelector<HTMLDetailsElement>('#raw-detection
 const saveHistoryButton = document.querySelector<HTMLButtonElement>('#save-history')!;
 const saveMessage = document.querySelector<HTMLParagraphElement>('#save-message')!;
 
+const demoScreens = Array.from(document.querySelectorAll<HTMLElement>('[data-demo-screen]'));
+const demoTargets = Array.from(document.querySelectorAll<HTMLElement>('[data-demo-target]'));
+const demoTitle = document.querySelector<HTMLElement>('#demo-title')!;
+const demoDots = Array.from(document.querySelectorAll<HTMLElement>('.demo-dock i'));
+const demoSteps = ['receipt', 'assign', 'settle'] as const;
+const demoTitles = { receipt: 'Reading receipt', assign: 'Assigning dishes', settle: 'Ready to settle' };
+let demoStepIndex = 0;
+let demoTimer = 0;
+
+function showDemoStep(step: typeof demoSteps[number]): void {
+  demoStepIndex = demoSteps.indexOf(step);
+  demoScreens.forEach((screen) => screen.classList.toggle('active', screen.dataset.demoScreen === step));
+  demoTargets.forEach((target) => target.classList.toggle('demo-active', target.dataset.demoTarget === step));
+  demoDots.forEach((dot, index) => dot.classList.toggle('active', index === demoStepIndex));
+  demoTitle.textContent = demoTitles[step];
+}
+
+function restartDemo(): void {
+  window.clearInterval(demoTimer);
+  if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+  demoTimer = window.setInterval(() => showDemoStep(demoSteps[(demoStepIndex + 1) % demoSteps.length]!), 3100);
+}
+
+demoTargets.forEach((target) => target.addEventListener('click', () => {
+  const step = target.dataset.demoTarget as typeof demoSteps[number];
+  showDemoStep(step);
+  restartDemo();
+}));
+showDemoStep('receipt');
+restartDemo();
+
 let prepared: PreparedImage | null = null;
 let controller: AbortController | null = null;
 let currentResult: ReceiptOcrResponse | null = null;
@@ -360,7 +429,7 @@ function applyLanguage(): void {
   hero.querySelector('h1')!.innerHTML = c('hero');
   document.querySelector<HTMLElement>('#auth-title')!.innerHTML = zh ? '一起分账。<br><em>轻松结清。</em>' : 'Split together.<br><em>Settle simply.</em>';
   hero.querySelector<HTMLParagraphElement>('.intro')!.textContent = c('intro');
-  scanHero.innerHTML = `${cameraIcon}<span>${c('scan')}</span>`;
+  scanHero.innerHTML = `${cameraIcon}<span>${c('scan')}</span><b aria-hidden="true">↗</b>`;
   uploadHero.innerHTML = c('upload');
   manualHero.innerHTML = c('manual');
   historyBack.textContent = c('historyBack');
