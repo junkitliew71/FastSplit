@@ -17,6 +17,7 @@ import { deleteReceiptHistory, getReceiptHistory, listReceiptHistory, saveReceip
 import { createHistoryRecord, type ReceiptHistoryRecord } from './receipt-history-model.ts';
 import { deleteLocalHistory, getLocalHistory, listLocalHistory, saveLocalHistory } from './local-history.ts';
 import { deletePaymentQr, loadPaymentQr, savePaymentQr, type PaymentQrRecord } from './payment-qr.ts';
+import { deletePaymentPhone, loadPaymentPhone, savePaymentPhone } from './payment-phone.ts';
 import {
   assignDetection,
   clearTarget,
@@ -77,8 +78,15 @@ app.innerHTML = `
       </div>
       <button id="manual-hero" class="manual-link" type="button">⌕&nbsp; Enter manually&nbsp; →</button>
       <details id="payment-qr-settings" class="payment-qr-settings">
-        <summary><span class="payment-qr-symbol">▦</span><span><strong>Payment QR</strong><small>Add your payment code to bill shares</small></span><b id="payment-qr-state">Set up →</b></summary>
+        <summary><span class="payment-qr-symbol">▦</span><span><strong>Payment details</strong><small>Add your TNG number or payment QR to bill shares</small></span><b id="payment-qr-state">Set up →</b></summary>
         <div class="payment-qr-body">
+          <div class="payment-phone-settings">
+            <label for="payment-phone-input"><strong>TNG phone number</strong><span>Saved only on this device · added to the top of shared bills</span></label>
+            <input id="payment-phone-input" type="tel" inputmode="tel" autocomplete="tel" placeholder="e.g. 0123456789" maxlength="24" />
+            <div class="payment-phone-actions"><button id="payment-phone-save" class="secondary" type="button">Save number</button><button id="payment-phone-delete" class="qr-delete hidden" type="button">Remove</button></div>
+            <p id="payment-phone-feedback" class="save-message" aria-live="polite"></p>
+          </div>
+          <div class="payment-divider"><span>or use a QR image</span></div>
           <div id="payment-qr-empty" class="payment-qr-empty"><strong>Upload your payment QR</strong><span>DuitNow, bank or e-wallet QR · saved only on this device</span></div>
           <img id="payment-qr-preview" class="payment-qr-preview hidden" alt="Your payment QR code" />
           <input id="payment-qr-input" class="hidden" type="file" accept="image/png,image/jpeg,image/webp" />
@@ -174,8 +182,8 @@ app.innerHTML = `
         <div id="person-totals" class="person-totals"></div>
         <div id="allocation-check" class="allocation-check"></div>
         <section id="payment-qr-share" class="payment-qr-share hidden" aria-labelledby="payment-qr-share-title">
-          <div><p class="step">PAYMENT</p><h3 id="payment-qr-share-title">Scan to pay</h3><span>This QR image will be attached when you share.</span></div>
-          <img id="payment-qr-share-image" alt="Payment QR code" />
+          <div><p class="step">PAYMENT</p><h3 id="payment-qr-share-title">Pay with TNG or QR</h3><strong id="payment-phone-share" class="payment-phone-share-value hidden"></strong><span id="payment-share-note">Payment details will be included when you share.</span></div>
+          <img id="payment-qr-share-image" class="hidden" alt="Payment QR code" />
           <a id="payment-qr-download" class="qr-download" download="fastsplit-payment-qr.png">Save QR image</a>
         </section>
         <button id="share-result" class="primary share-result" type="button">⌯&nbsp; Share result</button>
@@ -266,6 +274,12 @@ const paymentQrFeedback = document.querySelector<HTMLParagraphElement>('#payment
 const paymentQrShare = document.querySelector<HTMLElement>('#payment-qr-share')!;
 const paymentQrShareImage = document.querySelector<HTMLImageElement>('#payment-qr-share-image')!;
 const paymentQrDownload = document.querySelector<HTMLAnchorElement>('#payment-qr-download')!;
+const paymentPhoneInput = document.querySelector<HTMLInputElement>('#payment-phone-input')!;
+const paymentPhoneSave = document.querySelector<HTMLButtonElement>('#payment-phone-save')!;
+const paymentPhoneDelete = document.querySelector<HTMLButtonElement>('#payment-phone-delete')!;
+const paymentPhoneFeedback = document.querySelector<HTMLParagraphElement>('#payment-phone-feedback')!;
+const paymentPhoneShare = document.querySelector<HTMLElement>('#payment-phone-share')!;
+const paymentShareNote = document.querySelector<HTMLElement>('#payment-share-note')!;
 
 const input = document.querySelector<HTMLInputElement>('#receipt-input')!;
 const uploadInput = document.querySelector<HTMLInputElement>('#upload-input')!;
@@ -307,6 +321,7 @@ let scanProgressTimer: number | null = null;
 let scanProgress = 0;
 let paymentQr: PaymentQrRecord | null = null;
 let paymentQrObjectUrl = '';
+let paymentPhone = '';
 type Locale = 'en' | 'zh';
 let locale: Locale = localStorage.getItem('fastsplit:language') === 'zh' ? 'zh' : 'en';
 
@@ -364,8 +379,13 @@ function applyLanguage(): void {
     ['#google-login', 'Continue with Google', '使用 Google 继续'],
     ['#guest-login', 'Continue as Guest', '以访客身份继续'],
     ['#logout-button', 'Log out', '登出'],
-    ['#payment-qr-settings summary strong', 'Payment QR', '收款二维码'],
-    ['#payment-qr-settings summary small', 'Add your payment code to bill shares', '分享账单时附上你的收款码'],
+    ['#payment-qr-settings summary strong', 'Payment details', '收款资料'],
+    ['#payment-qr-settings summary small', 'Add your TNG number or payment QR to bill shares', '分享账单时附上 TNG 电话号码或收款码'],
+    ['.payment-phone-settings label strong', 'TNG phone number', 'TNG 电话号码'],
+    ['.payment-phone-settings label span', 'Saved only on this device · added to the top of shared bills', '仅保存在此设备 · 会显示在分享账单最上方'],
+    ['#payment-phone-save', 'Save number', '保存号码'],
+    ['#payment-phone-delete', 'Remove', '移除'],
+    ['.payment-divider span', 'or use a QR image', '或者使用二维码图片'],
     ['#payment-qr-empty strong', 'Upload your payment QR', '上传你的收款二维码'],
     ['#payment-qr-empty span', 'DuitNow, bank or e-wallet QR · saved only on this device', '支持 DuitNow、银行或电子钱包二维码 · 仅保存在此设备'],
     ['.how-it-works > div:nth-child(1) strong', 'Add receipt', '添加收据'],
@@ -415,8 +435,7 @@ function applyLanguage(): void {
     ['#final-step > .step', 'ALL SQUARE', '账目结清'],
     ['#final-step > h2', 'Good food. Fair split.', '吃得开心，分得公平。'],
     ['#payment-qr-share .step', 'PAYMENT', '付款'],
-    ['#payment-qr-share-title', 'Scan to pay', '扫码付款'],
-    ['#payment-qr-share span', 'This QR image will be attached when you share.', '分享时会附上这张收款二维码。'],
+    ['#payment-qr-share-title', 'Pay with TNG or QR', '使用 TNG 或二维码付款'],
     ['#payment-qr-download', 'Save QR image', '保存二维码图片'],
     ['#payment-qr-delete', 'Remove', '移除'],
     ['#start-over', 'Split another bill', '分摊另一张账单'],
@@ -426,6 +445,7 @@ function applyLanguage(): void {
   staticCopy.forEach(([selector, en, chinese]) => setText(selector, en, chinese));
   personName.placeholder = zh ? '姓名' : 'Name';
   manualRestaurant.placeholder = zh ? '餐厅名称' : 'Restaurant name';
+  paymentPhoneInput.placeholder = zh ? '例如：0123456789' : 'e.g. 0123456789';
   if (currentIdentity?.mode === 'guest') accountName.textContent = zh ? '访客模式' : 'Guest Mode';
   manualItems.querySelectorAll<HTMLElement>('.manual-item').forEach((row) => {
     const labels = row.querySelectorAll<HTMLLabelElement>('label');
@@ -906,16 +926,25 @@ function renderFinalSummary(): void {
 function renderPaymentQr(): void {
   if (paymentQrObjectUrl) URL.revokeObjectURL(paymentQrObjectUrl);
   paymentQrObjectUrl = paymentQr ? URL.createObjectURL(paymentQr.blob) : '';
-  paymentQrState.textContent = paymentQr ? (locale === 'zh' ? '已准备 ✓' : 'Ready ✓') : (locale === 'zh' ? '设置 →' : 'Set up →');
+  paymentQrState.textContent = paymentQr || paymentPhone ? (locale === 'zh' ? '已准备 ✓' : 'Ready ✓') : (locale === 'zh' ? '设置 →' : 'Set up →');
   paymentQrEmpty.classList.toggle('hidden', Boolean(paymentQr));
   paymentQrPreview.classList.toggle('hidden', !paymentQr);
   paymentQrDelete.classList.toggle('hidden', !paymentQr);
   paymentQrUpload.textContent = paymentQr
     ? (locale === 'zh' ? '更换二维码图片' : 'Replace QR image')
     : (locale === 'zh' ? '上传二维码图片' : 'Upload QR image');
-  paymentQrShare.classList.toggle('hidden', !paymentQr);
-  shareResult.textContent = paymentQr
-    ? (locale === 'zh' ? '⌯  分享账单和收款码' : '⌯  Share bill + payment QR')
+  paymentPhoneInput.value = paymentPhone;
+  paymentPhoneDelete.classList.toggle('hidden', !paymentPhone);
+  paymentPhoneShare.textContent = paymentPhone ? `TNG: ${paymentPhone}` : '';
+  paymentPhoneShare.classList.toggle('hidden', !paymentPhone);
+  paymentQrShare.classList.toggle('hidden', !paymentQr && !paymentPhone);
+  paymentQrShareImage.classList.toggle('hidden', !paymentQr);
+  paymentQrDownload.classList.toggle('hidden', !paymentQr);
+  paymentShareNote.textContent = paymentQr
+    ? (locale === 'zh' ? '分享时会附上付款资料和收款二维码。' : 'Payment details and the QR image will be included when you share.')
+    : (locale === 'zh' ? '分享时会把 TNG 电话号码放在账单最上方。' : 'The TNG number will appear at the top of shared bills.');
+  shareResult.textContent = paymentQr || paymentPhone
+    ? (locale === 'zh' ? '⌯  分享账单和付款资料' : '⌯  Share bill + payment details')
     : (locale === 'zh' ? '⌯  分享结果' : '⌯  Share result');
   if (!paymentQr || !paymentQrObjectUrl) return;
   paymentQrPreview.src = paymentQrObjectUrl;
@@ -996,6 +1025,7 @@ function buildShareText(): string {
     .map((charge) => ({ ...charge, allocations: allocateByWeight(charge.value, weights) }));
 
   return [
+    ...(paymentPhone ? [`TNG: ${paymentPhone}`, locale === 'zh' ? '复制以上号码并粘贴到 TNG 付款。' : 'Copy the number above and paste it into TNG to pay.', ''] : []),
     `FastSplit · ${restaurant}`,
     `${locale === 'zh' ? '账单总额' : 'Bill total'}: ${formatMoney(grand)}`,
     '',
@@ -1295,6 +1325,22 @@ paymentQrDelete.addEventListener('click', async () => {
     paymentQrDelete.disabled = false;
   }
 });
+paymentPhoneSave.addEventListener('click', () => {
+  const saved = savePaymentPhone(localStorage, paymentPhoneInput.value);
+  if (!saved) {
+    paymentPhoneFeedback.textContent = locale === 'zh' ? '请输入 8 至 15 位的有效电话号码。' : 'Enter a valid phone number with 8 to 15 digits.';
+    return;
+  }
+  paymentPhone = saved;
+  renderPaymentQr();
+  paymentPhoneFeedback.textContent = locale === 'zh' ? 'TNG 电话号码已保存，之后分享账单时会自动显示。' : 'TNG number saved. It will appear on future shared bills.';
+});
+paymentPhoneDelete.addEventListener('click', () => {
+  deletePaymentPhone(localStorage);
+  paymentPhone = '';
+  renderPaymentQr();
+  paymentPhoneFeedback.textContent = locale === 'zh' ? 'TNG 电话号码已移除。' : 'TNG number removed.';
+});
 wizard.addEventListener('click', (event) => {
   const button = (event.target as HTMLElement).closest<HTMLButtonElement>('[data-step]');
   const target = Number(button?.dataset.step ?? 0);
@@ -1422,6 +1468,7 @@ langZh.addEventListener('click', () => setLanguage('zh'));
 
 // FastSplit now opens directly without an authentication gate.
 enterApplication(enableGuestMode(localStorage));
+paymentPhone = loadPaymentPhone(localStorage);
 applyLanguage();
 void loadPaymentQr().then((saved) => {
   paymentQr = saved ?? null;
