@@ -969,22 +969,76 @@ function buildShareText(): string {
   const shares = calculateShares();
   const grand = reviewModel.summary.grandTotal.valueCents ?? shares.reduce((sum, person) => sum + person.amountCents, 0);
   const restaurant = currentResult.parsed.restaurantName.value || 'FastSplit bill';
+  const foodAmounts = new Map(people.map((person) => [person.id, 0]));
+  const itemLines = new Map(people.map((person) => [person.id, [] as string[]]));
+
+  for (const item of reviewModel.items) {
+    const owners = [...(assignments.get(item.id) ?? [])];
+    if (!owners.length || item.totalCents === null) continue;
+    const base = Math.floor(item.totalCents / owners.length);
+    let remainder = item.totalCents - base * owners.length;
+    owners.forEach((personId) => {
+      const amount = base + (remainder-- > 0 ? 1 : 0);
+      foodAmounts.set(personId, (foodAmounts.get(personId) ?? 0) + amount);
+      const shared = owners.length > 1 ? (locale === 'zh' ? '（共享）' : ' (shared)') : '';
+      const name = item.name || (locale === 'zh' ? '未命名项目' : 'Unnamed item');
+      itemLines.get(personId)?.push(`  - ${name}${shared}: ${formatMoney(amount)}`);
+    });
+  }
+
+  const weights = people.map((person) => foodAmounts.get(person.id) ?? 0);
+  const charges = [
+    { label: locale === 'zh' ? '服务费' : 'Service charge', value: reviewModel.summary.serviceCharge.valueCents ?? 0 },
+    { label: locale === 'zh' ? 'SST / GST 税费' : 'SST / GST', value: reviewModel.summary.tax.valueCents ?? 0 },
+    { label: locale === 'zh' ? '折扣' : 'Discount', value: -Math.abs(reviewModel.summary.discount.valueCents ?? 0) },
+    { label: locale === 'zh' ? '舍入调整' : 'Rounding', value: reviewModel.summary.rounding.valueCents ?? 0 },
+  ].filter((charge) => charge.value !== 0)
+    .map((charge) => ({ ...charge, allocations: allocateByWeight(charge.value, weights) }));
+
   return [
     `FastSplit · ${restaurant}`,
     `${locale === 'zh' ? '账单总额' : 'Bill total'}: ${formatMoney(grand)}`,
     '',
     ...shares.flatMap((person) => {
-      const itemNames = reviewModel?.items
-        .filter((item) => assignments.get(item.id)?.has(person.id))
-        .map((item) => item.name || (locale === 'zh' ? '未命名项目' : 'Unnamed item')) ?? [];
+      const personIndex = people.findIndex((candidate) => candidate.id === person.id);
+      const lines = itemLines.get(person.id) ?? [];
+      let detailedTotal = foodAmounts.get(person.id) ?? 0;
+      for (const charge of charges) {
+        const amount = charge.allocations[personIndex] ?? 0;
+        if (amount === 0) continue;
+        detailedTotal += amount;
+        lines.push(`  - ${charge.label}: ${formatSignedMoney(amount)}`);
+      }
+      const adjustment = person.amountCents - detailedTotal;
+      if (adjustment !== 0) {
+        lines.push(`  - ${locale === 'zh' ? '其他调整' : 'Other adjustment'}: ${formatSignedMoney(adjustment)}`);
+      }
       return [
         `${person.name}: ${formatMoney(person.amountCents)}`,
-        ...(itemNames.length ? [`  ${itemNames.join(' · ')}`] : [`  ${locale === 'zh' ? '没有分配项目' : 'No items assigned'}`]),
+        ...(lines.length ? lines : [`  - ${locale === 'zh' ? '没有分配项目' : 'No items assigned'}: ${formatMoney(0)}`]),
+        '',
       ];
     }),
-    '',
     locale === 'zh' ? '使用 FastSplit，公平分账。' : 'Split fairly with FastSplit.',
   ].join('\n');
+}
+
+function allocateByWeight(totalCents: number, weights: number[]): number[] {
+  if (!weights.length) return [];
+  const weightTotal = weights.reduce((sum, value) => sum + value, 0);
+  const denominator = weightTotal || weights.length;
+  let remaining = totalCents;
+  return weights.map((weight, index) => {
+    const portion = index === weights.length - 1
+      ? remaining
+      : Math.round(totalCents * (weightTotal ? weight : 1) / denominator);
+    remaining -= portion;
+    return portion;
+  });
+}
+
+function formatSignedMoney(cents: number): string {
+  return cents < 0 ? `-${formatMoney(Math.abs(cents))}` : formatMoney(cents);
 }
 
 async function shareBillResult(): Promise<void> {
