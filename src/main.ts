@@ -213,8 +213,23 @@ app.innerHTML = `
       <section id="split-step" class="workflow-step hidden">
         <p class="step">WHO HAD WHAT?</p><h2>Split the items</h2>
         <p class="scanner-copy">Select one or more people for every item. Shared items are divided equally.</p>
+        <div class="split-mode-picker" role="group" aria-label="Split mode">
+          <button id="classic-mode" class="active" type="button" aria-pressed="true"><span>✓</span><b>Classic</b><small>Tap to assign</small></button>
+          <button id="magnet-mode" type="button" aria-pressed="false"><span>🧲</span><b>Magnet</b><small>Drag to catch</small></button>
+        </div>
         <div id="assignment-progress" class="assignment-progress" aria-live="polite"></div>
-        <div id="assignment-list" class="assignment-list"></div>
+        <div id="classic-assignment-panel"><div id="assignment-list" class="assignment-list"></div></div>
+        <div id="magnet-assignment-panel" class="magnet-assignment-panel hidden">
+          <div class="magnet-game-head"><span>Drag a name magnet close to a dish to catch it. Catch the same dish with another magnet to share it.</span><button id="magnet-reset" type="button">↻ Reset</button></div>
+          <div id="magnet-board" class="magnet-board" aria-label="Drag name magnets to assign dishes">
+            <span class="magnet-board-label">UNASSIGNED ITEMS</span>
+            <div id="magnet-items"></div>
+            <span class="magnet-tray-label">DRAG YOUR MAGNET</span>
+            <div id="magnet-people"></div>
+            <i id="magnet-pulse" class="magnet-pulse" aria-hidden="true"></i>
+          </div>
+          <p id="magnet-instruction" class="magnet-instruction" aria-live="polite"></p>
+        </div>
         <button id="split-continue" class="primary" type="button">Review summary →</button>
       </section>
       <section id="final-step" class="workflow-step hidden">
@@ -282,6 +297,16 @@ const peopleFeedback = document.querySelector<HTMLParagraphElement>('#people-fee
 const assignmentList = document.querySelector<HTMLDivElement>('#assignment-list')!;
 const assignmentProgress = document.querySelector<HTMLDivElement>('#assignment-progress')!;
 const splitContinue = document.querySelector<HTMLButtonElement>('#split-continue')!;
+const classicModeButton = document.querySelector<HTMLButtonElement>('#classic-mode')!;
+const magnetModeButton = document.querySelector<HTMLButtonElement>('#magnet-mode')!;
+const classicAssignmentPanel = document.querySelector<HTMLDivElement>('#classic-assignment-panel')!;
+const magnetAssignmentPanel = document.querySelector<HTMLDivElement>('#magnet-assignment-panel')!;
+const magnetBoard = document.querySelector<HTMLDivElement>('#magnet-board')!;
+const magnetItems = document.querySelector<HTMLDivElement>('#magnet-items')!;
+const magnetPeople = document.querySelector<HTMLDivElement>('#magnet-people')!;
+const magnetPulse = document.querySelector<HTMLElement>('#magnet-pulse')!;
+const magnetReset = document.querySelector<HTMLButtonElement>('#magnet-reset')!;
+const magnetInstruction = document.querySelector<HTMLParagraphElement>('#magnet-instruction')!;
 const finalRestaurant = document.querySelector<HTMLParagraphElement>('#final-restaurant')!;
 const finalTotal = document.querySelector<HTMLDivElement>('#final-total')!;
 const personTotals = document.querySelector<HTMLDivElement>('#person-totals')!;
@@ -388,6 +413,8 @@ let currentHistoryImage: Pick<ReceiptHistoryRecord, 'receiptImagePath' | 'receip
 type Person = { id: string; name: string };
 let people: Person[] = [];
 let assignments = new Map<string, Set<string>>();
+type AssignmentMode = 'classic' | 'magnet';
+let assignmentMode: AssignmentMode = 'classic';
 let currentStep = 1;
 let manualMode = false;
 let scanProgressTimer: number | null = null;
@@ -506,6 +533,14 @@ function applyLanguage(): void {
     ['#split-step > .step', 'WHO HAD WHAT?', '谁吃了什么？'],
     ['#split-step > h2', 'Split the items', '分配账单项目'],
     ['#split-step > .scanner-copy', 'Select one or more people for every item. Shared items are divided equally.', '为每个项目选择一人或多人，共享项目会平均分摊。'],
+    ['#classic-mode b', 'Classic', '经典模式'],
+    ['#classic-mode small', 'Tap to assign', '点选分配'],
+    ['#magnet-mode b', 'Magnet', '磁铁模式'],
+    ['#magnet-mode small', 'Drag to catch', '拖动吸附'],
+    ['.magnet-game-head > span', 'Drag a name magnet close to a dish to catch it. Catch the same dish with another magnet to share it.', '拖动名字磁铁靠近菜品即可吸住；用另一个磁铁再吸一次，就能共同分摊。'],
+    ['#magnet-reset', '↻ Reset', '↻ 重置'],
+    ['.magnet-board-label', 'UNASSIGNED ITEMS', '待分配菜品'],
+    ['.magnet-tray-label', 'DRAG YOUR MAGNET', '拖动你的磁铁'],
     ['#final-step > .step', 'ALL SQUARE', '账目结清'],
     ['#final-step > h2', 'Good food. Fair split.', '吃得开心，分得公平。'],
     ['#payment-qr-share .step', 'PAYMENT', '付款'],
@@ -941,7 +976,131 @@ function renderAssignments(): void {
     const selected = assignments.get(item.id) ?? new Set<string>();
     return `<article class="assignment-card"><div><small>${locale === 'zh' ? '项目' : 'ITEM'} ${String(index + 1).padStart(2, '0')}</small><strong>${escapeHtml(item.name || (locale === 'zh' ? '未命名项目' : 'Unnamed item'))}</strong><span>${formatMoney(item.totalCents)}</span></div><div class="person-options">${people.map((person) => `<label><input type="checkbox" data-item-id="${item.id}" data-person-id="${person.id}" ${selected.has(person.id) ? 'checked' : ''}><span>${escapeHtml(person.name)}</span></label>`).join('')}</div></article>`;
   }).join('');
+  renderMagnetAssignments();
+  setAssignmentMode(assignmentMode);
   updateAssignmentProgress();
+}
+
+const magnetItemPositions = [
+  [15, 18], [48, 14], [78, 22], [28, 43], [63, 43], [13, 62], [47, 64], [80, 61],
+] as const;
+const magnetFoodIcons = ['🍤', '🍗', '🥤', '🍲', '🍚', '🥭', '🥗', '🍜'];
+
+function setAssignmentMode(mode: AssignmentMode): void {
+  assignmentMode = mode;
+  const magnet = mode === 'magnet';
+  classicAssignmentPanel.classList.toggle('hidden', magnet);
+  magnetAssignmentPanel.classList.toggle('hidden', !magnet);
+  classicModeButton.classList.toggle('active', !magnet);
+  magnetModeButton.classList.toggle('active', magnet);
+  classicModeButton.setAttribute('aria-pressed', String(!magnet));
+  magnetModeButton.setAttribute('aria-pressed', String(magnet));
+  if (magnet) refreshMagnetState();
+}
+
+function magnetFoodShare(personId: string): number {
+  if (!reviewModel) return 0;
+  return reviewModel.items.reduce((sum, item) => {
+    const owners = assignments.get(item.id);
+    if (!owners?.has(personId) || item.totalCents === null) return sum;
+    return sum + Math.floor(item.totalCents / owners.size);
+  }, 0);
+}
+
+function refreshMagnetState(): void {
+  if (!reviewModel) return;
+  const assignedCount = reviewModel.items.filter((item) => (assignments.get(item.id)?.size ?? 0) > 0).length;
+  magnetItems.querySelectorAll<HTMLElement>('[data-magnet-item-id]').forEach((element) => {
+    const itemId = element.dataset.magnetItemId ?? '';
+    const owners = [...(assignments.get(itemId) ?? [])];
+    const ownerNames = owners.map((id) => people.find((person) => person.id === id)?.name).filter(Boolean);
+    element.classList.toggle('caught', owners.length > 0);
+    const ownerList = element.querySelector<HTMLElement>('.magnet-item-owners');
+    if (ownerList) ownerList.innerHTML = owners.map((id) => {
+      const person = people.find((entry) => entry.id === id);
+      return person ? `<i title="${escapeHtml(person.name)}">${escapeHtml(person.name.slice(0, 2).toUpperCase())}</i>` : '';
+    }).join('');
+    element.setAttribute('aria-label', ownerNames.length
+      ? `${element.dataset.itemName ?? ''}: ${ownerNames.join(', ')}`
+      : `${element.dataset.itemName ?? ''}: ${locale === 'zh' ? '尚未分配' : 'unassigned'}`);
+  });
+  magnetPeople.querySelectorAll<HTMLElement>('[data-magnet-person-id]').forEach((element) => {
+    const amount = magnetFoodShare(element.dataset.magnetPersonId ?? '');
+    const total = element.querySelector<HTMLElement>('small');
+    if (total) total.textContent = formatMoney(amount);
+  });
+  magnetInstruction.textContent = assignedCount === reviewModel.items.length
+    ? (locale === 'zh' ? '全部菜品都吸住了！可以查看分账结果。' : 'Every dish is caught! Your split is ready to review.')
+    : (locale === 'zh' ? `已吸住 ${assignedCount}/${reviewModel.items.length} 道菜 · 点击已分配的菜品可以清除` : `${assignedCount} of ${reviewModel.items.length} dishes caught · tap an assigned dish to clear it`);
+  updateAssignmentProgress();
+}
+
+function renderMagnetAssignments(): void {
+  if (!reviewModel) return;
+  magnetItems.innerHTML = reviewModel.items.map((item, index) => {
+    const [left, top] = magnetItemPositions[index % magnetItemPositions.length] ?? magnetItemPositions[0];
+    const lap = Math.floor(index / magnetItemPositions.length);
+    const adjustedTop = Math.min(68, top + lap * 6);
+    return `<button class="magnet-item" type="button" data-magnet-item-id="${item.id}" data-item-name="${escapeHtml(item.name)}" style="left:${left}%;top:${adjustedTop}%"><span>${magnetFoodIcons[index % magnetFoodIcons.length]}</span><b>${escapeHtml(item.name || (locale === 'zh' ? '未命名项目' : 'Unnamed item'))}</b><small>${formatMoney(item.totalCents)}</small><em class="magnet-item-owners"></em></button>`;
+  }).join('');
+  magnetPeople.innerHTML = people.map((person, index) => {
+    const left = people.length === 1 ? 50 : 10 + index * (80 / Math.max(1, people.length - 1));
+    return `<button class="name-magnet" type="button" data-magnet-person-id="${person.id}" style="left:${left}%;top:88%"><span>${escapeHtml(person.name.slice(0, 2).toUpperCase())}</span><b>${escapeHtml(person.name)}</b><small>${formatMoney(0)}</small></button>`;
+  }).join('');
+  attachMagnetDragging();
+  refreshMagnetState();
+}
+
+function attachMagnetDragging(): void {
+  magnetPeople.querySelectorAll<HTMLButtonElement>('.name-magnet').forEach((magnet) => {
+    let dragging = false;
+    let offsetX = 0;
+    let offsetY = 0;
+    magnet.addEventListener('pointerdown', (event) => {
+      dragging = true;
+      magnet.setPointerCapture(event.pointerId);
+      magnet.classList.add('dragging');
+      const bounds = magnet.getBoundingClientRect();
+      offsetX = event.clientX - bounds.left - bounds.width / 2;
+      offsetY = event.clientY - bounds.top - bounds.height / 2;
+    });
+    magnet.addEventListener('pointermove', (event) => {
+      if (!dragging) return;
+      const boardBounds = magnetBoard.getBoundingClientRect();
+      const x = Math.max(58, Math.min(boardBounds.width - 58, event.clientX - boardBounds.left - offsetX));
+      const y = Math.max(45, Math.min(boardBounds.height - 45, event.clientY - boardBounds.top - offsetY));
+      magnet.style.left = `${x}px`;
+      magnet.style.top = `${y}px`;
+      magnetItems.querySelectorAll<HTMLElement>('[data-magnet-item-id]').forEach((itemElement) => {
+        const itemBounds = itemElement.getBoundingClientRect();
+        const distance = Math.hypot(itemBounds.left + itemBounds.width / 2 - (boardBounds.left + x), itemBounds.top + itemBounds.height / 2 - (boardBounds.top + y));
+        itemElement.classList.toggle('magnet-near', distance < 105);
+        if (distance >= 82) return;
+        const itemId = itemElement.dataset.magnetItemId;
+        const personId = magnet.dataset.magnetPersonId;
+        if (!itemId || !personId) return;
+        const selected = assignments.get(itemId) ?? new Set<string>();
+        if (selected.has(personId)) return;
+        selected.add(personId);
+        assignments.set(itemId, selected);
+        magnetPulse.style.left = `${x}px`;
+        magnetPulse.style.top = `${y}px`;
+        magnetPulse.classList.remove('play');
+        void magnetPulse.offsetWidth;
+        magnetPulse.classList.add('play');
+        refreshMagnetState();
+      });
+    });
+    const stopDragging = (event: PointerEvent) => {
+      if (!dragging) return;
+      dragging = false;
+      magnet.classList.remove('dragging');
+      magnetItems.querySelectorAll('.magnet-near').forEach((item) => item.classList.remove('magnet-near'));
+      if (magnet.hasPointerCapture(event.pointerId)) magnet.releasePointerCapture(event.pointerId);
+    };
+    magnet.addEventListener('pointerup', stopDragging);
+    magnet.addEventListener('pointercancel', stopDragging);
+  });
 }
 
 function updateAssignmentProgress(): void {
@@ -1374,6 +1533,19 @@ assignmentList.addEventListener('change', (event) => {
   if (checkbox.checked) selected.add(personId); else selected.delete(personId);
   assignments.set(itemId, selected);
   updateAssignmentProgress();
+  refreshMagnetState();
+});
+classicModeButton.addEventListener('click', () => setAssignmentMode('classic'));
+magnetModeButton.addEventListener('click', () => setAssignmentMode('magnet'));
+magnetReset.addEventListener('click', () => {
+  assignments = new Map();
+  renderAssignments();
+});
+magnetItems.addEventListener('click', (event) => {
+  const item = (event.target as HTMLElement).closest<HTMLElement>('[data-magnet-item-id]');
+  if (!item?.dataset.magnetItemId || (assignments.get(item.dataset.magnetItemId)?.size ?? 0) === 0) return;
+  assignments.delete(item.dataset.magnetItemId);
+  refreshMagnetState();
 });
 splitContinue.addEventListener('click', () => {
   const missing = reviewModel?.items.some((item) => (assignments.get(item.id)?.size ?? 0) === 0);
